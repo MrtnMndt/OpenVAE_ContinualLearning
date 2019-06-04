@@ -20,7 +20,6 @@ grpcio==1.10.1
 imageio==2.3.0
 imagesize==0.7.1
 jedi==0.11.1
-Jinja2==2.9.6
 joblib==0.13.2
 jsonschema==2.6.0
 kazam==1.5.3
@@ -39,11 +38,8 @@ nbformat==4.4.0
 nested-dict==1.61
 networkx==2.2
 nibabel==2.1.0
-notebook==5.4.1
 numba==0.43.1
 numpy==1.15.4
-onboard==1.2.0
-opencv-python==3.4.3.18
 packaging==19.0
 pandas==0.20.3
 pandocfilters==1.4.2
@@ -67,16 +63,12 @@ pystan==2.17.1.0
 python-dateutil==2.7.3
 PyWavelets==1.0.1
 pyxdg==0.25
-PyYAML==3.12
 pyzmq==16.0.2
-reportlab==3.3.0
-requests==2.9.1
 resampy==0.2.1
 scikit-image==0.14.1
 scikit-learn==0.19.1
 scipy==1.2.1
 seaborn==0.8.1
-Send2Trash==1.5.0
 sessioninstaller==0.0.0
 simplegeneric==0.8.1
 sip==4.19.8
@@ -97,7 +89,6 @@ tornado==4.5.2
 tqdm==4.17.1
 traitlets==4.3.2
 traittypes==0.0.6
-urllib3==1.13.1
 virtualenv==15.0.1
 visdom==0.1.5
 wcwidth==0.1.7
