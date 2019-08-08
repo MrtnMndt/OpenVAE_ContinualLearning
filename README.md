@@ -15,7 +15,7 @@ The code implements our proposed unified (O)CDVAE model with growing single-head
 
 We list our main python packages that are required. In principle our code should work with many different versions. To allow for full reproducibility at later points in time, we also add a pip freeze `requirements.txt` for our machine's exact configuration at the point of writing the paper. Not all of these libraries are needed and the critical libraries that we use are:
 
-**Our code does not seem to currently run with PyTorch 1.1 due to some removal of functionality in expanding the classifier units that don't seem to be mentioned in the patch notes. Please use PyTorch 1.0. The following issue details this further: https://github.com/MrtnMndt/OCDVAE_ContinualLearning/issues/1 **
+**Our code does not seem to currently run with PyTorch 1.1 due to removal of some functionality in expanding the classifier units (no longer being allowed to resize the weight tensor) that don't seem to be mentioned in the patch notes. Please use PyTorch 1.0. The following issue details this further: https://github.com/MrtnMndt/OCDVAE_ContinualLearning/issues/1**
 
 * Python 3 (3.5.2)
 * PyTorch 1.0.0 & torchvision 0.2.1 
