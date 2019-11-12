@@ -5,7 +5,7 @@ import torch.nn as nn
 # Note: nn.Upsample is going to be deprecated in favor of nn.functional.interpolate in future torch versions!
 
 
-def grow_classifier(classifier, class_increment, weight_initializer):
+def grow_classifier(device, classifier, class_increment, weight_initializer):
     """
     Function to grow the units of a classifier an initializing only the newly added units while retaining old knowledge.
 
@@ -16,32 +16,17 @@ def grow_classifier(classifier, class_increment, weight_initializer):
     """
 
     # add the corresponding amount of features and resize the weights
-    classifier[-1].out_features += class_increment
-    # we can safely resize the tensor because the change is in the first dimension
-    # in this case an empty row is simply added (think of flattened arrays). This wouldn't be the case for dimension 2
-    classifier[-1].weight.data.resize_(classifier[-1].weight.data.size(0) + class_increment,
-                                       classifier[-1].weight.data.size(1))
+    new_in_fetures   = classifier[-1].in_features
+    new_out_features = classifier[-1].out_features + class_increment
+    bias_flag        = False
 
-    # if gradients aren't none (i.e. because they have been deleted), resize the gradients correspondingly.
-    # As gradients are set to zero before each optimization step we needn't worry about initialization for them.
-    if not isinstance(classifier[-1].weight.grad, type(None)):
-        # no need to initialize as gradients are set to zero before each training step
-        classifier[-1].weight.grad.data.resize_(classifier[-1].weight.grad.data.size(0) + class_increment,
-                                                classifier[-1].weight.grad.data.size(1))
-
-    # check if there is a bias and resize those values too
+    tmp_weights      = classifier[-1].weight.data.clone()
     if not isinstance(classifier[-1].bias, type(None)):
-        classifier[-1].bias.data.resize_(classifier[-1].bias.data.size(0) + class_increment)[:-class_increment] = 0
-        if not isinstance(classifier[-1].bias.grad, type(None)):
-            # no need to initialize as gradients are set to zero before each training step
-            classifier[-1].bias.grad.data.resize_(classifier[-1].bias.grad.data.size(0) + class_increment)
+        tmp_bias     = classifier[-1].bias.data.clone()
+        bias_flag    = True
 
-    # for the second dimension of the parameters we can't simply resize because the flattened array is going to shift
-    # values in a wrong fashion. We thus first create a temporary copy, resize the tensor and copy the values
-    # back after initialization.
-    tmp_weights = classifier[-1].weight.data[0:-class_increment, :].clone()
-    if not isinstance(classifier[-1].bias, type(None)):
-        tmp_bias = classifier[-1].bias.data[0:-class_increment].clone()
+    classifier[-1]   = nn.Linear(new_in_fetures, new_out_features, bias = bias_flag)
+    classifier[-1].to(device)
 
     # initialize the correctly shaped layer.
     weight_initializer.layer_init(classifier[-1])

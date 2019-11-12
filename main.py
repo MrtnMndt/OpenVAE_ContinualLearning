@@ -271,7 +271,7 @@ def main():
 
                 # grow the classifier and increment the variable for number of overall classes so we can use it later
                 if args.cross_dataset:
-                    grow_classifier(model.module.classifier, sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                    grow_classifier(device, model.module.classifier, sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
                                     - model.module.num_classes, WeightInitializer)
                     model.module.num_classes = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
                 else:
