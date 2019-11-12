@@ -2,30 +2,29 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 
-# Note: nn.Upsample is going to be deprecated in favor of nn.functional.interpolate in future torch versions!
-
 
 def grow_classifier(device, classifier, class_increment, weight_initializer):
     """
     Function to grow the units of a classifier an initializing only the newly added units while retaining old knowledge.
 
     Parameters:
+        device (str): Name of device to use.
         classifier (torch.nn.module): Trained classifier portion of the model.
         class_increment (int): Number of classes/units to add.
         weight_initializer (WeightInit): Weight initializer class instance defining initialization schemes/functions.
     """
 
     # add the corresponding amount of features and resize the weights
-    new_in_fetures   = classifier[-1].in_features
+    new_in_features = classifier[-1].in_features
     new_out_features = classifier[-1].out_features + class_increment
-    bias_flag        = False
+    bias_flag = False
 
-    tmp_weights      = classifier[-1].weight.data.clone()
+    tmp_weights = classifier[-1].weight.data.clone()
     if not isinstance(classifier[-1].bias, type(None)):
-        tmp_bias     = classifier[-1].bias.data.clone()
-        bias_flag    = True
+        tmp_bias = classifier[-1].bias.data.clone()
+        bias_flag = True
 
-    classifier[-1]   = nn.Linear(new_in_fetures, new_out_features, bias = bias_flag)
+    classifier[-1] = nn.Linear(new_in_features, new_out_features, bias=bias_flag)
     classifier[-1].to(device)
 
     # initialize the correctly shaped layer.

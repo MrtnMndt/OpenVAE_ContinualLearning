@@ -4,12 +4,10 @@ import os
 import math
 import seaborn as sns
 import numpy as np
-import tensorflow as tf
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.colors import ListedColormap
-from packaging import version
 
 # matplotlib backend, required for plotting of images to tensorboard
 matplotlib.use('Agg')
@@ -42,38 +40,6 @@ def args_to_tensorboard(writer, args):
         txt += arg + ": " + str(getattr(args, arg)) + "<br/>"
 
     writer.add_text('command_line_parameters', txt, 0)
-
-
-def plot_to_tensorboard(writer, fig, step, name):
-    """
-    Takes a matplotlib figure handle and converts it using
-    canvas and string-casts to a numpy array that can be
-    visualized in TensorBoard using the add_image function.
-
-    See http://martin-mundt.com/tensorboard-figures/ for a corresponding blog post about plotting to TensorBoard.
-
-    Parameters:
-        writer (tensorboard.SummaryWriter): TensorBoard SummaryWriter instance.
-        fig (matplotlib.pyplot.fig): Matplotlib figure handle.
-        step (int): counter usually specifying steps/epochs/time.
-        name (str): name of the figure in tensorboard.
-    """
-
-    # Draw figure on canvas
-    fig.canvas.draw()
-
-    # Convert the figure to numpy array, read the pixel values and reshape the array
-    img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-    # Normalize into 0-1 range for TensorBoard(X). Swap axes for newer versions where API expects colors in first dim
-    img = img / 255.0
-
-    if version.parse(tf.VERSION) >= version.parse("1.8.0"):
-        img = np.swapaxes(img, 0, 2)
-
-    # Add figure in numpy "image" to TensorBoard writer
-    writer.add_image(name, img, step)
 
 
 def visualize_image_grid(images, writer, count, name, save_path):
@@ -128,7 +94,7 @@ def visualize_confusion(writer, step, matrix, class_dict, save_path):
     ax.grid(False)
     plt.tight_layout()
 
-    plot_to_tensorboard(writer, fig, step, 'confusion_matrix')
+    writer.add_figure("Training data", fig, global_step=str(step))
     plt.savefig(os.path.join(save_path, 'confusion_epoch_' + str(step) + '.png'), bbox_inches='tight')
 
 
@@ -182,7 +148,7 @@ def visualize_dataset_in_2d_embedding(writer, encoding_list, dataset_name, save_
 
     plt.tight_layout()
 
-    plot_to_tensorboard(writer, fig, task, 'latent_embedding')
+    writer.add_figure('latent_embedding', fig, global_step=task)
     plt.savefig(os.path.join(save_path, dataset_name + '_latent_2d_embedding_task_' +
                              str(task) + '.png'), bbox_inches='tight')
 

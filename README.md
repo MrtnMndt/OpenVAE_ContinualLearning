@@ -15,10 +15,8 @@ The code implements our proposed unified (O)CDVAE model with growing single-head
 
 We list our main python packages that are required. In principle our code should work with many different versions. To allow for full reproducibility at later points in time, we also add a pip freeze `requirements.txt` for our machine's exact configuration at the point of writing the paper. Not all of these libraries are needed and the critical libraries that we use are:
 
-**Our code does not seem to currently run with PyTorch 1.1 due to removal of some functionality in expanding the classifier units (no longer being allowed to resize the weight tensor) that don't seem to be mentioned in the patch notes. Please use PyTorch 1.0. The following issue details this further: https://github.com/MrtnMndt/OCDVAE_ContinualLearning/issues/1**
-
 * Python 3 (3.5.2)
-* PyTorch 1.0.0 & torchvision 0.2.1 
+* PyTorch 1.3.1 & torchvision 0.4.2 
 * Cython >= 0.17 (for libmr) & libmr 0.1.9 (for open set recognition)
 * tqdm 4.17.1 (for progress bars)
 * scipy 1.2.1 & librosa 0.6.3 (for creation of AudioMNIST spectrograms)
@@ -27,9 +25,7 @@ and for visualization:
 
 * Matplotlib 3.0.2
 * Seaborn 0.8.1
-* TensorFlow 1.7.0 (gpu version not needed) only for TensorBoard 1.7 and TensorBoardX 1.2
-* packaging 19.0 (to get visualization package versions and allow for different versions of TensorFlow and TensorBoard to work with our code)
-
+* Tensorboard 2.0.1
 
 ## Running experiments - command line parser
 We have added a command line parser in `lib/cmdparser.py`. There is a variety of options that can be specified. The large majority is also set to a sensible default value and doesn't need to be touched to reproduce the results of our paper. All the options, together with a help dialogue can be printed with:
@@ -77,7 +73,7 @@ Our (O)CDVAE models can be turned into their autoregressive counterparts with th
 	python3 main.py --autoregression True --out-channels 60 --pixel-cnn-channels 60 --pixel-cnn-layers 3 --pixel-cnn-kernel-size 7
 	
 ## Standalone script for open set dataset evaluation with a trained model
-We provide a separate standalone script to simply evaluate open set dataset outlier rejection rates on an already trained model by specifying the dataset it has been trained on and choosing unseen datasets to evaluate on. The script is called `eval_openset.py` and uses the same command line parser. The `--resume path/to/model.pth.tar` option needs to be specified to load an already trained model. The script will then proceed to generate plots similar to figures 2, 9 and 10 of our paper based on prediction confidences and uncertainties and open set recognition. 
+We provide a separate standalone script to simply evaluate open set dataset outlier rejection rates on an already trained model by specifying the dataset it has been trained on and choosing unseen datasets to evaluate on. The script is called `eval_openset.py` and uses the same command line parser. The `--resume path/to/model.pth.tar` option needs to be specified to load an already trained model. 
 
 ## Logging and visualization
 We save visualizations to a folder on hard-drive and add them to the respective TensorBoard instance. This TensorBoard log file also contains all history of losses and our continual learning metrics as described in the paper. Each experiment generates a new folder that contains the major important command line options in its name and a time stamp to quickly distinguish experiments. A full specification of command line arguments is further saved to file and to the TensorBoard text tab.
