@@ -14,6 +14,9 @@ parser = argparse.ArgumentParser(description='PyTorch Variational Training')
 parser.add_argument('--dataset', default='MNIST', help='name of dataset')
 parser.add_argument('-j', '--workers', default=4, type=int, help='number of data loading workers (default: 4)')
 parser.add_argument('-p', '--patch-size', default=28, type=int, help='patch size for crops (default: 28)')
+parser.add_argument('--gray-scale', default=False, type=bool, help='use gray scale images (default: False). '
+                                                                   'If false, single channel images will be repeated '
+                                                                   'to three channels.')
 parser.add_argument('-noise', '--denoising-noise-value', default=0.25, type=float,
                     help='noise value for denoising. (float in range [0, 1]. Default: 0.25)')
 
