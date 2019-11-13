@@ -195,3 +195,68 @@ def calc_openset_classification(data_outlier_probs, num_classes, num_outlier_thr
         dataset_outliers[i] = dataset_outliers[i] / float(total_dataset)
 
     return {"thresholds": threshs, "outlier_percentage": dataset_outliers}
+
+
+def calc_entropy_classification(dataset_entropies, max_thresh_value, num_outlier_threshs=50):
+    """
+    Calculates the percentage of dataset outliers given a set of entropies over a range of rejection priors.
+    Parameters:
+         dataset_entropies (list): List of entropies for the entire dataset (each instance)
+         num_outlier_threshs (int): Number of outlier rejection priors (evenly spread over the interval (0,1)).
+    Returns:
+        dict: Dictionary containing outlier percentages and corresponding rejection prior values.
+    """
+
+    dataset_outliers = []
+    threshs = []
+
+    total_dataset = float(len(dataset_entropies))
+
+    # loop through each rejection prior value and evaluate the percentage of the dataset being considered as
+    # statistical outliers, i.e. each data point's outlier probability > rejection prior.
+    for i in range(num_outlier_threshs - 1):
+        outlier_threshold = (i + 1) * (max_thresh_value / num_outlier_threshs)
+        threshs.append(outlier_threshold)
+
+        dataset_outliers.append(0)
+
+        for k in range(len(dataset_entropies)):
+            if dataset_entropies[k] > outlier_threshold:
+                dataset_outliers[i] += 1
+
+        dataset_outliers[i] = dataset_outliers[i] / total_dataset
+
+    return {"entropy_thresholds": threshs, "entropy_outlier_percentage": dataset_outliers}
+
+
+def calc_reconstruction_classification(dataset_reconstruction_losses, max_thresh_value, num_outlier_threshs=50):
+    # TODO: basically the same as calc_entropy_classification function -> merge
+    """
+    Calculates the percentage of dataset outliers given a set of reconstruction losses over a range of rejection priors.
+    Parameters:
+         dataset_reconstruction_losses (list): List of entropies for the entire dataset (each instance)
+         num_outlier_threshs (int): Number of outlier rejection priors (evenly spread over the interval (0,1)).
+    Returns:
+        dict: Dictionary containing outlier percentages and corresponding rejection prior values.
+    """
+
+    dataset_outliers = []
+    threshs = []
+
+    # loop through each rejection prior value and evaluate the percentage of the dataset being considered as
+    # statistical outliers, i.e. each data point's outlier probability > rejection prior.
+
+    total_dataset = float(len(dataset_reconstruction_losses))
+
+    for i in range(num_outlier_threshs - 1):
+        outlier_threshold = (i + 1) * (max_thresh_value / num_outlier_threshs)
+        threshs.append(outlier_threshold)
+        dataset_outliers.append(0)
+
+        for k in range(len(dataset_reconstruction_losses)):
+            if dataset_reconstruction_losses[k] > outlier_threshold:
+                dataset_outliers[i] += 1
+
+        dataset_outliers[i] = dataset_outliers[i] / total_dataset
+
+    return {"reconstruction_thresholds": threshs, "reconstruction_outlier_percentage": dataset_outliers}

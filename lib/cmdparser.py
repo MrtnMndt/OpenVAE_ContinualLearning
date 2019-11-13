@@ -81,12 +81,18 @@ parser.add_argument('--openset-generative-replay-threshold', default=0.01, type=
 parser.add_argument('--distance-function', default='cosine', help='Openset distance function (default: cosine) '
                                                                   'choice of euclidean|cosine|mix')
 parser.add_argument('-tailsize', '--openset-weibull-tailsize', default=0.05, type=float,
-                    help='tailsize in percent of data (float in range [0, 1]. Default: 0.05')
+                    help='Tailsize in percent of data (float in range [0, 1]. Default: 0.05')
 
 # Open set standalone script
-parser.add_argument('--openset-dataset', default='AudioMNIST', help='name of openset dataset')
-parser.add_argument('--openset-dataset2', default='FashionMNIST', help='name of openset dataset')
-
+parser.add_argument('--openset-datasets', default='FashionMNIST,AudioMNIST,KMNIST,CIFAR10,CIFAR100,SVHN',
+                    help='name of openset datasets')
+parser.add_argument('--percent-validation-outliers', default=0.05, type=float,
+                    help='Assumed percentage of inherent outliers in the validation set of the original task. '
+                         'default (0.05 -> 5%). Is used to find priors and threshold values for testing.')
+parser.add_argument('--calc-reconstruction', default=False, type=bool,
+                    help='Turn on calculation of decoder. This option exists as calculating the decoder for multiple'
+                         'samples can be computationally very expensive. Only turn this on if you are interested in'
+                         'out-of-distribution detection according to reconstruction loss.')
 
 # PixelVAE
 parser.add_argument('--autoregression', default=False, type=bool, help='use PixelCNN decoder for generation')

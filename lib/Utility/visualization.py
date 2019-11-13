@@ -21,8 +21,16 @@ ticks_font_size = 48
 # setting seaborn specifics
 sns.set(font_scale=2.5)
 sns.set_style("whitegrid")
-colors = sns.color_palette('Dark2', 7)
+colors = sns.color_palette("Set2")
 pal = sns.cubehelix_palette(10, light=0.0)
+linestyles = [(0, (1, 3)),  # 'dotted'
+              (0, (1, 1)),  # 'densely dotted'
+              (0, (2, 2)),  # 'dashed'
+              (0, (3, 1)),  # 'densely dashed'
+              (0, (3, 3, 1, 3)),  # 'dashdotted'
+              (0, (3, 1, 1, 1)),  # 'densely dashdotted'
+              (0, (3, 3, 1, 3, 1, 3)),  # 'dashdotdotted'
+              (0, (3, 1, 1, 1, 1, 1))]  # 'densely dashdotdotted'
 
 
 def args_to_tensorboard(writer, args):
@@ -177,119 +185,292 @@ def visualize_means(means, classes_order, data_name, save_path, name):
     plt.savefig(os.path.join(save_path, name + '_mean_activations.png'), bbox_inches='tight')
 
 
-def visualize_classification_uncertainty(data_mus, data_sigmas, other_data_mus, other_data_sigmas, other_data_mus2,
-                                         other_data_sigmas2, data_name, other_data_name, other_data_name2,
-                                         num_samples, save_path):
+def visualize_classification_uncertainty(data_mus, data_sigmas, other_data_dicts, other_data_mu_key,
+                                         other_data_sigma_key,
+                                         data_name, num_samples, save_path):
     """
     Visualization of prediction uncertainty computed over multiple samples for each input.
-
-    Could be refactored for flexible amount of other_data mus and sigmas and corresponding dataset names. Currently
-    hard-coded to two to reproduce the plots of the paper.
 
     Parameters:
         data_mus (list or torch.Tensor): Encoded mu values for trained dataset's validation set.
         data_sigmas (list or torch.Tensor): Encoded sigma values for trained dataset's validation set.
-        other_data_mus (list or torch.Tensor): Encoded mu values for unseen dataset.
-        other_data_sigmas (list or torch.Tensor): Encoded sigma values for unseen dataset.
-        other_data_mus2 (list or torch.Tensor): Encoded mu values for second unseen dataset.
-        other_data_sigmas2 (list or torch.Tensor): Encoded sigma values for second unseen dataset.
+        other_data_dicts (dictionary of dictionaries): A dataset with values per dictionary, among them mus and sigmas
+        other_data_mu_key (str): Dictionary key for the mus
+        other_data_sigma_key (str): Dictionary key for the sigmas
         data_name (str): Original dataset's name.
-        other_data_name (str): Name of first unseen dataset.
-        other_data_name2 (str): Name of second unseen dataset.
         num_samples (int): Number of used samples to obtain prediction values.
         save_path (str): Saving path.
     """
 
     data_mus = [y for x in data_mus for y in x]
     data_sigmas = [y for x in data_sigmas for y in x]
-    other_data_mus = [y for x in other_data_mus for y in x]
-    other_data_sigmas = [y for x in other_data_sigmas for y in x]
-
-    other_data_mus2 = [y for x in other_data_mus2 for y in x]
-    other_data_sigmas2 = [y for x in other_data_sigmas2 for y in x]
 
     plt.figure(figsize=(20, 14))
-    plt.scatter(data_mus, data_sigmas, label=data_name, s=75, c=colors[2], alpha=1.0)
-    plt.scatter(other_data_mus, other_data_sigmas, label=other_data_name, s=75, c=colors[1], alpha=0.3,
-                marker='*')
-    plt.scatter(other_data_mus2, other_data_sigmas2, label=other_data_name2, s=75, c=colors[4], alpha=0.3,
-                marker='*')
+    plt.scatter(data_mus, data_sigmas, label=data_name, s=75, c=colors[0], alpha=1.0)
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        other_data_mus = [y for x in other_data_dict[other_data_mu_key] for y in x]
+        other_data_sigmas = [y for x in other_data_dict[other_data_sigma_key] for y in x]
+        plt.scatter(other_data_mus, other_data_sigmas, label=other_data_name, s=75, c=colors[c], alpha=0.3,
+                    marker='*')
+        c += 1
+
     plt.xlabel("Prediction mean", fontsize=axes_font_size)
     plt.ylabel("Prediction standard deviation", fontsize=axes_font_size)
-    plt.xlim(xmin=-0.05, xmax=1.05)
-    plt.ylim(ymin=-0.05, ymax=0.55)
+    plt.xlim(left=-0.05, right=1.05)
+    plt.ylim(bottom=-0.05, top=0.55)
     plt.legend(loc=1, fontsize=legend_font_size)
-    plt.savefig(os.path.join(save_path, data_name + '_vs_' + other_data_name + '_' + other_data_name2 +
+    plt.savefig(os.path.join(save_path, data_name + '_vs_' + ",".join(list(other_data_dicts.keys())) +
                              '_classification_uncertainty_' + str(num_samples) + '_samples.pdf'),
                 bbox_inches='tight')
 
 
-def visualize_weibull_outlier_probabilities(data_outlier_probs, other_data_outlier_probs,
-                                            data_name, other_data_name, save_path, tailsize):
+def visualize_classification_scores(data, other_data_dicts, dict_key, data_name, save_path):
+    """
+    Visualization of classification scores per dataset.
+
+    Parameters:
+        data (list): Classification scores.
+        other_data_dicts (dictionary of dictionaries): Dictionary of key-value pairs per dataset
+        dict_key (string): Dictionary key to plot
+        data_name (str): Original trained dataset's name.
+        save_path (str): Saving path.
+    """
+
+    data = [y for x in data for y in x]
+
+    plt.figure(figsize=(20, 20))
+    plt.hist(data, label=data_name, alpha=1.0, bins=20, color=colors[0])
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        other_data = [y for x in other_data_dict[dict_key] for y in x]
+        plt.hist(other_data, label=other_data_name, alpha=0.5, bins=20, color=colors[c])
+        c += 1
+
+    plt.title("Dataset classification", fontsize=title_font_size)
+    plt.xlabel("Classification confidence", fontsize=axes_font_size)
+    plt.ylabel("Number of images", fontsize=axes_font_size)
+    plt.legend(loc=0)
+    plt.xlim(left=-0.0, right=1.05)
+
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys()))
+                             + '_classification_scores.png'),
+                bbox_inches='tight')
+
+
+def visualize_entropy_histogram(data, other_data_dicts, max_entropy, dict_key, data_name, save_path):
+    """
+    Visualization of the entropy the datasets.
+
+    Parameters:
+        data (list):
+        other_data_dicts (dictionary of dictionaries): Dictionary of key-value pairs per dataset
+        dict_key (str): Dictionary key to plot
+        data_name (str): Original trained dataset's name.
+        save_path (str): Saving path.
+    """
+    data = [x for x in data]
+
+    plt.figure(figsize=(20, 20))
+    plt.hist(data, label=data_name, alpha=1.0, bins=25, color=colors[0])
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        other_data = [x for x in other_data_dict[dict_key]]
+        plt.hist(other_data, label=other_data_name, alpha=0.5, bins=25, color=colors[c])
+        c += 1
+
+    plt.title("Dataset classification entropy", fontsize=title_font_size)
+    plt.xlabel("Classification entropy", fontsize=axes_font_size)
+    plt.ylabel("Number of images", fontsize=axes_font_size)
+    plt.legend(loc=0)
+    plt.xlim(left=-0.0, right=max_entropy)
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys()))
+                             + '_classification_entropies.png'),
+                bbox_inches='tight')
+
+
+def visualize_recon_loss_histogram(data, other_data_dicts, max_recon_loss, dict_key, data_name, save_path):
+    """
+    Visualization of the entropy the datasets.
+
+    Parameters:
+        data (list):
+        other_data_dicts (dictionary of dictionaries): Dictionary of key-value pairs per dataset
+        dict_key (str): Dictionary key to plot
+        data_name (str): Original trained dataset's name.
+        save_path (str): Saving path.
+    """
+    data = [x for x in data]
+
+    plt.figure(figsize=(20, 20))
+    plt.hist(data, label=data_name, alpha=1.0, bins=25, color=colors[0])
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        other_data = [x for x in other_data_dict[dict_key]]
+        plt.hist(other_data, label=other_data_name, alpha=0.5, bins=25, color=colors[c])
+        c += 1
+
+    plt.title("Dataset reconstruction", fontsize=title_font_size)
+    plt.xlabel("Reconstruction loss (nats)", fontsize=axes_font_size)
+    plt.ylabel("Number of images", fontsize=axes_font_size)
+    plt.legend(loc=0)
+    plt.xlim(left=-0.0, right=max_recon_loss)
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys()))
+                             + '_reconstruction_losses.png'),
+                bbox_inches='tight')
+
+
+def visualize_weibull_outlier_probabilities(data_outlier_probs, other_data_outlier_probs_dict,
+                                            data_name, save_path, tailsize):
     """
     Visualization of Weibull CDF outlier probabilites.
 
     Parameters:
         data_outlier_probs (np.array): Outlier probabilities for each input of the trained dataset's validation set.
-        other_data_outlier_probs (np.array): Outlier probabilities for each input of an unseen dataset.
+        other_data_outlier_probs_dict (dictionary): Outlier probabilities for each input of an unseen dataset.
         data_name (str): Original trained dataset's name.
-        other_data_name (str): Unseen dataset's name.
         save_path (str): Saving path.
         tailsize (int): Fitted Weibull model's tailsize.
     """
 
     data_outlier_probs = np.concatenate(data_outlier_probs, axis=0)
-    other_data_outlier_probs = np.concatenate(other_data_outlier_probs, axis=0)
 
     data_weights = np.ones_like(data_outlier_probs) / float(len(data_outlier_probs))
-    other_data_weights = np.ones_like(other_data_outlier_probs) / float(len(other_data_outlier_probs))
 
     plt.figure(figsize=(20, 20))
     plt.hist(data_outlier_probs, label=data_name, weights=data_weights, bins=50, color=colors[0],
-             alpha=0.5, edgecolor='white', linewidth=5)
-    plt.hist(other_data_outlier_probs, label=other_data_name, weights=other_data_weights,
-             bins=50, color=colors[1], alpha=0.5, edgecolor='white', linewidth=5)
+             alpha=1.0, edgecolor='white', linewidth=5)
+
+    c = 0
+    for other_data_name, other_data_outlier_probs in other_data_outlier_probs_dict.items():
+        other_data_outlier_probs = np.concatenate(other_data_outlier_probs, axis=0)
+        other_data_weights = np.ones_like(other_data_outlier_probs) / float(len(other_data_outlier_probs))
+        plt.hist(other_data_outlier_probs, label=other_data_name, weights=other_data_weights,
+                 bins=50, color=colors[c], alpha=0.5, edgecolor='white', linewidth=5)
+        c += 1
+
     plt.title("Outlier probabilities: tailsize " + str(tailsize), fontsize=title_font_size)
     plt.xlabel("Outlier probability according to Weibull CDF", fontsize=axes_font_size)
     plt.ylabel("Percentage", fontsize=axes_font_size)
-    plt.xlim(xmin=-0.05, xmax=1.05)
-    plt.ylim(ymin=-0.05, ymax=1.05)
+    plt.xlim(left=-0.05, right=1.05)
+    plt.ylim(bottom=-0.05, top=1.05)
     plt.legend(loc=0)
-    plt.savefig(os.path.join(save_path, data_name + '_' + other_data_name + '_weibull_outlier_probabilities_tailsize_'
+
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_outlier_probs_dict.keys()))
+                             + '_weibull_outlier_probabilities_tailsize_'
                              + str(tailsize) + '.png'), bbox_inches='tight')
 
 
-def visualize_openset_classification(data, other_data, other_data2, data_name, other_data_name, other_data_name2,
+def visualize_openset_classification(data, other_data_dicts, dict_key, data_name,
                                      thresholds, save_path, tailsize):
     """
     Visualization of percentage of datasets considered as statistical outliers evaluated for different
     Weibull CDF rejection priors.
 
-    Could be refactored for flexible amount of other datasets and corresponding dataset names. Currently
-    hard-coded to two to reproduce the plots of the paper.
-
     Parameters:
         data (list): Dataset outlier percentages per rejection prior value for the trained dataset's validation set.
-        other_data (list): Dataset outlier percentages per rejection prior value for an unseen dataset.
-        other_data2 (list): Dataset outlier percentages per rejection prior value for a second unseen dataset.
+        other_data_dicts (dictionary of dictionaries):
+            Dataset outlier percentages per rejection prior value for an unseen dataset.
+        dict_key (str): Dictionary key of the values to visualize
         data_name (str): Original trained dataset's name.
-        other_data_name (str): First unseen dataset's name.
-        other_data_name2 (str): Second unseen dataset's name.
         thresholds (list): List of integers with rejection prior values.
         save_path (str): Saving path.
         tailsize (int): Weibull model's tailsize.
     """
 
-    lw = 8
-    plt.figure(figsize=(20, 14))
-    plt.plot(thresholds, data, label=data_name, color=colors[2], linestyle='solid', linewidth=lw)
-    plt.plot(thresholds, other_data, label=other_data_name, color=colors[1], linestyle='dashed', linewidth=lw)
-    plt.plot(thresholds, other_data2, label=other_data_name2, color=colors[4], linestyle='-.', linewidth=lw)
+    lw = 10
+    plt.figure(figsize=(20, 20))
+    plt.plot(thresholds, data, label=data_name, color=colors[0], linestyle='solid', linewidth=lw)
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        plt.plot(thresholds, other_data_dict[dict_key], label=other_data_name, color=colors[c],
+                 linestyle=linestyles[c % len(linestyles)], linewidth=lw)
+        c += 1
+
     plt.xlabel(r"Weibull CDF outlier rejection prior $\Omega_t$", fontsize=axes_font_size)
     plt.ylabel("Percentage of dataset outliers", fontsize=axes_font_size)
-    plt.xlim(xmin=-0.05, xmax=1.05)
-    plt.ylim(ymin=-0.05, ymax=1.05)
-    plt.legend(loc=0, fontsize=legend_font_size)
-    plt.savefig(os.path.join(save_path, data_name + '_' + other_data_name + '_' + other_data_name2 +
+    plt.xlim(left=-0.05, right=1.05)
+    plt.ylim(bottom=-0.05, top=1.05)
+    plt.legend(loc=0, fontsize=legend_font_size - 15)
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys())) +
                              '_outlier_classification' + '_tailsize_' + str(tailsize) + '.pdf'),
                 bbox_inches='tight')
+
+
+def visualize_entropy_classification(data, other_data_dicts, dict_key, data_name,
+                                     thresholds, save_path):
+    """
+    Visualization of percentage of datasets considered as statistical outliers evaluated for different
+    entropy thresholds.
+
+    Parameters:
+        data (list): Dataset outlier percentages per rejection prior value for the trained dataset's validation set.
+        other_data_dicts (dictionary of dictionaries):
+            Dataset outlier percentages per rejection prior value for an unseen dataset.
+        dict_key (str): Dictionary key of the values to visualize
+        data_name (str): Original trained dataset's name.
+        thresholds (list): List of integers with rejection prior values.
+        save_path (str): Saving path.
+    """
+
+    lw = 10
+    plt.figure(figsize=(20, 20))
+    plt.plot(thresholds, data, label=data_name, color=colors[0], linestyle='solid', linewidth=lw)
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        plt.plot(thresholds, other_data_dict[dict_key], label=other_data_name, color=colors[c],
+                 linestyle=linestyles[c % len(linestyles)], linewidth=lw)
+        c += 1
+
+    plt.xlabel(r"Predictive entropy", fontsize=axes_font_size)
+    plt.ylabel("Percentage of dataset outliers", fontsize=axes_font_size)
+    plt.xlim(left=-0.05, right=thresholds[-1])
+    plt.ylim(bottom=-0.05, top=1.05)
+    plt.legend(loc=0, fontsize=legend_font_size - 15)
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys())) +
+                             '_entropy_outlier_classification' + '.pdf'),
+                bbox_inches='tight')
+
+
+def visualize_reconstruction_classification(data, other_data_dicts, dict_key, data_name,
+                                            thresholds, save_path, autoregression=False):
+    """
+    Visualization of percentage of datasets considered as statistical outliers evaluated for different
+    entropy thresholds.
+
+    Parameters:
+        data (list): Dataset outlier percentages per rejection prior value for the trained dataset's validation set.
+        other_data_dicts (dictionary of dictionaries):
+            Dataset outlier percentages per rejection prior value for an unseen dataset.
+        dict_key (str): Dictionary key of the values to visualize
+        data_name (str): Original trained dataset's name.
+        thresholds (list): List of integers with rejection prior values.
+        save_path (str): Saving path.
+    """
+
+    lw = 10
+    plt.figure(figsize=(20, 20))
+    plt.plot(thresholds, data, label=data_name, color=colors[0], linestyle='solid', linewidth=lw)
+
+    c = 0
+    for other_data_name, other_data_dict in other_data_dicts.items():
+        plt.plot(thresholds, other_data_dict[dict_key], label=other_data_name, color=colors[c],
+                 linestyle=linestyles[c % len(linestyles)], linewidth=lw)
+        c += 1
+
+    if autoregression:
+        plt.xlabel(r"Dataset reconstruction loss (bits per dim)", fontsize=axes_font_size)
+    else:
+        plt.xlabel(r"Dataset reconstruction loss (nats)", fontsize=axes_font_size)
+    plt.ylabel("Percentage of dataset outliers", fontsize=axes_font_size)
+    plt.xlim(left=-0.05, right=thresholds[-1])
+    plt.ylim(bottom=-0.05, top=1.05)
+    plt.legend(loc=0, fontsize=legend_font_size - 15)
+    plt.savefig(os.path.join(save_path, data_name + '_' + ",".join(list(other_data_dicts.keys())) +
+                             '_reconstruction_loss_outlier_classification' + '.pdf'), bbox_inches='tight')

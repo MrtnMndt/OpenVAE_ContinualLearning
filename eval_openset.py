@@ -12,6 +12,7 @@ Minimum example usage:
 --resume /path/checkpoint.pth.tar --var-samples 100 -a MLP
 """
 
+import collections
 from lib.cmdparser import parser
 import lib.Datasets.datasets as datasets
 import lib.Models.architectures as architectures
@@ -39,15 +40,30 @@ def main():
     net_input, _ = next(iter(dataset.train_loader))
     num_colors = net_input.size(1)
 
-    # Load open set dataset 1
-    openset_data_init_method = getattr(datasets, args.openset_dataset)
-    openset_dataset = openset_data_init_method(torch.cuda.is_available(), args)
+    # Split a part of the non-used dataset to use as validation set for determining open set (e.g entropy)
+    # rejection thresholds
+    split_perc = 0.5
+    split_sets = torch.utils.data.random_split(dataset.valset,
+                                               [int((1 - split_perc) * len(dataset.valset)),
+                                                int(split_perc * len(dataset.valset))])
 
-    # Load open set dataset 2
-    # Note: This could be easily refactored to one or flexible amount of datasets, we have kept this hard-coded
-    # to reproduce the plots of the paper. Please feel free to refactor this.
-    openset_data_init_method2 = getattr(datasets, args.openset_dataset2)
-    openset_dataset2 = openset_data_init_method2(torch.cuda.is_available(), args)
+    # overwrite old set and create new split set to determine thresholds/priors
+    dataset.valset = split_sets[0]
+    dataset.threshset = split_sets[1]
+
+    # overwrite old data loader and create new loader for thresh set
+    is_gpu = torch.cuda.is_available()
+    dataset.val_loader = torch.utils.data.DataLoader(dataset.valset, batch_size=args.batch_size, shuffle=False,
+                                                     num_workers=args.workers, pin_memory=is_gpu, sampler=None)
+    dataset.threshset_loader = torch.utils.data.DataLoader(dataset.threshset, batch_size=args.batch_size, shuffle=False,
+                                                           num_workers=args.workers, pin_memory=is_gpu, sampler=None)
+
+    # Load open set datasets
+    openset_datasets_names = args.openset_datasets.strip().split(',')
+    openset_datasets = []
+    for openset_dataset in openset_datasets_names:
+        openset_data_init_method = getattr(datasets, openset_dataset)
+        openset_datasets.append(openset_data_init_method(torch.cuda.is_available(), args))
 
     if not args.autoregression:
         args.out_channels = num_colors
@@ -85,7 +101,8 @@ def main():
     # start of the model evaluation on the training dataset and fitting
     print("Evaluating original train dataset: " + args.dataset + ". This may take a while...")
     dataset_eval_dict_train = eval_dataset(model, dataset.train_loader, dataset.num_classes, device,
-                                           samples=args.var_samples)
+                                           samples=args.var_samples, calc_reconstruction=args.calc_reconstruction,
+                                           autoregression=args.autoregression)
     print("Training accuracy: ", dataset_eval_dict_train["accuracy"])
 
     # Get the mean of z for correctly classified data inputs
@@ -107,12 +124,74 @@ def main():
     weibull_models, valid_weibull = fit_weibull_models(distances_to_z_means_correct_train, tailsizes)
     assert valid_weibull, "Weibull fit is not valid"
 
+    # Determine rejection thresholds/priors on the created split set
+    print("Evaluating original threshold split dataset: " + args.dataset + ". This may take a while...")
+    threshset_eval_dict = eval_dataset(model, dataset.threshset_loader, num_classes, device, samples=args.var_samples,
+                                       calc_reconstruction=args.calc_reconstruction, autoregression=args.autoregression)
+
+    # Again calculate distances to mean z
+    print("Split set accuracy: ", threshset_eval_dict["accuracy"])
+    distances_to_z_means_threshset = calc_distances_to_means(mean_zs, threshset_eval_dict["zs_correct"],
+                                                             args.distance_function)
+
+    outlier_probs_threshset = calc_outlier_probs(weibull_models, distances_to_z_means_threshset)
+
+    threshset_classification = calc_openset_classification(outlier_probs_threshset, num_classes,
+                                                           num_outlier_threshs=100)
+    max_entropy = np.max(threshset_eval_dict["out_entropy"])
+    threshset_entropy_classification = calc_entropy_classification(threshset_eval_dict["out_entropy"],
+                                                                   max_entropy,
+                                                                   num_outlier_threshs=100)
+
+    # We have added a flag to turn off calculation of the decoder because it is computationally heavy for many samples
+    # (repeated calculation of the decoder), whereas latent space sampling and repeated calculation of our latent based
+    # EVT approach and even the single layer classifier is cheap.
+    if args.calc_reconstruction:
+        max_recon_loss = np.max(threshset_eval_dict["recon_loss_mus"])
+        threshset_recon_classification = calc_reconstruction_classification(threshset_eval_dict["recon_loss_mus"],
+                                                                            max_recon_loss,
+                                                                            num_outlier_threshs=1000)
+
+    # determine the index for the corresponding rejection priors/thresholds. Although this should never happen,
+    # we also set a default if no threshold satisfies the 95% inlier condition.
+    if (np.array(threshset_classification["outlier_percentage"]) <= args.percent_validation_outliers).any() == True:
+        EVT_prior_index = np.argwhere(np.array(threshset_classification["outlier_percentage"])
+                                      <= 0.05)[0][0]
+        EVT_prior = threshset_classification["thresholds"][EVT_prior_index]
+    else:
+        EVT_prior = 0.5
+        EVT_prior_index = 50
+
+    if (np.array(threshset_entropy_classification["entropy_outlier_percentage"]) <=
+        args.percent_validation_outliers).any() == True:
+        entropy_threshold_index = np.argwhere(np.array(threshset_entropy_classification["entropy_outlier_percentage"])
+                                              <= 0.05)[0][0]
+        entropy_threshold = threshset_entropy_classification["entropy_thresholds"][entropy_threshold_index]
+    else:
+        entropy_threshold = np.median(threshset_entropy_classification["entropy_thresholds"])
+        entropy_threshold_index = 50
+
+    if args.calc_reconstruction:
+        if (np.array(threshset_recon_classification["reconstruction_outlier_percentage"]) <=
+            args.percent_validation_outliers).any() == True:
+            recon_threshold_index = np.argwhere(
+                np.array(threshset_recon_classification["reconstruction_outlier_percentage"]) <= 0.05)[0][0]
+            recon_threshold = threshset_recon_classification["reconstruction_thresholds"][recon_threshold_index]
+        else:
+            recon_threshold = np.median(threshset_recon_classification["reconstruction_thresholds"])
+            recon_threshold_index = 500
+
+    print("EVT prior: " + str(EVT_prior) + "; Entropy threshold: " + str(entropy_threshold))
+    if args.calc_reconstruction:
+        print("Reconstruction loss threshold: " + str(recon_threshold))
+
     # ------------------------------------------------------------------------------------------
     # Fitting on train dataset complete. Beginning of all testing/open set recognition on validation and unknown sets.
     # ------------------------------------------------------------------------------------------
     # We evaluate the validation set to later evaluate trained dataset's statistical inlier/outlier estimates.
     print("Evaluating original validation dataset: " + args.dataset + ". This may take a while...")
-    dataset_eval_dict = eval_dataset(model, dataset.val_loader, dataset.num_classes, device, samples=args.var_samples)
+    dataset_eval_dict = eval_dataset(model, dataset.val_loader, num_classes, device, samples=args.var_samples,
+                                     calc_reconstruction=args.calc_reconstruction, autoregression=args.autoregression)
 
     # Again calculate distances to mean z
     print("Validation accuracy: ", dataset_eval_dict["accuracy"])
@@ -122,60 +201,115 @@ def main():
     # Evaluate outlier probability of trained dataset's validation set
     outlier_probs_correct = calc_outlier_probs(weibull_models, distances_to_z_means_correct)
 
-    # Repeat process for open set recognition on unseen dataset 1 (
-    print("Evaluating openset dataset: " + args.openset_dataset + ". This may take a while...")
-    openset_dataset_eval_dict = eval_openset_dataset(model, openset_dataset.val_loader, openset_dataset.num_classes,
-                                                     device, samples=args.var_samples)
-
-    openset_distances_to_z_means = calc_distances_to_means(mean_zs, openset_dataset_eval_dict["zs"],
-                                                           args.distance_function)
-
-    openset_outlier_probs = calc_outlier_probs(weibull_models, openset_distances_to_z_means)
-
-    # visualize the outlier probabilities
-    visualize_weibull_outlier_probabilities(outlier_probs_correct, openset_outlier_probs,
-                                            args.dataset, args.openset_dataset, save_path, tailsize)
-
-    # getting outlier classification accuracies across the entire datasets
-    dataset_classification_correct = calc_openset_classification(outlier_probs_correct, dataset.num_classes,
+    dataset_classification_correct = calc_openset_classification(outlier_probs_correct, num_classes,
                                                                  num_outlier_threshs=100)
-    openset_classification = calc_openset_classification(openset_outlier_probs, dataset.num_classes,
-                                                         num_outlier_threshs=100)
+    dataset_entropy_classification_correct = calc_entropy_classification(dataset_eval_dict["out_entropy"],
+                                                                         max_entropy,
+                                                                         num_outlier_threshs=100)
+    if args.calc_reconstruction:
+        dataset_recon_classification_correct = calc_reconstruction_classification(dataset_eval_dict["recon_loss_mus"],
+                                                                                  max_recon_loss,
+                                                                                  num_outlier_threshs=1000)
 
-    # open set recognition on unseen dataset 2 (Lots of redundant code copy pasting, could be refactored)
-    print("Evaluating openset dataset 2: " + args.openset_dataset2 + ". This may take a while...")
-    openset_dataset_eval_dict2 = eval_openset_dataset(model, openset_dataset2.val_loader, openset_dataset2.num_classes,
-                                                      device, samples=args.var_samples)
+    print(args.dataset + '(trained) EVT outlier percentage: ' +
+          str(dataset_classification_correct["outlier_percentage"][EVT_prior_index]))
+    print(args.dataset + '(trained) entropy outlier percentage: ' +
+          str(dataset_entropy_classification_correct["entropy_outlier_percentage"][entropy_threshold_index]))
+    if args.calc_reconstruction:
+        print(args.dataset + '(trained) reconstruction loss outlier percentage: ' +
+              str(dataset_recon_classification_correct["reconstruction_outlier_percentage"][recon_threshold_index]))
+
+    # ------------------------------------------------------------------------------------------
+    # Repeat process for open set recognition (no fitting, just testing) on all unseen datasets
+    # ------------------------------------------------------------------------------------------
+    # dicitionaries to hold results
+    openset_dataset_eval_dicts = collections.OrderedDict()
+    openset_outlier_probs_dict = collections.OrderedDict()
+    openset_classification_dict = collections.OrderedDict()
+    openset_entropy_classification_dict = collections.OrderedDict()
+    if args.calc_reconstruction:
+        openset_recon_classification_dict = collections.OrderedDict()
+
+    for od, openset_dataset in enumerate(openset_datasets):
+        print("Evaluating openset dataset: " + openset_datasets_names[od] + ". This may take a while...")
+        openset_dataset_eval_dict = eval_openset_dataset(model, openset_dataset.val_loader, num_classes, device,
+                                                         samples=args.var_samples, autoregression=args.autoregression,
+                                                         calc_reconstruction=args.calc_reconstruction)
+
+        openset_distances_to_z_means = calc_distances_to_means(mean_zs, openset_dataset_eval_dict["zs"],
+                                                               args.distance_function)
+
+        openset_outlier_probs = calc_outlier_probs(weibull_models, openset_distances_to_z_means)
+
+        # getting outlier classification accuracies across the entire datasets
+        openset_classification = calc_openset_classification(openset_outlier_probs, num_classes,
+                                                             num_outlier_threshs=100)
+        openset_entropy_classification = calc_entropy_classification(openset_dataset_eval_dict["out_entropy"],
+                                                                     max_entropy,
+                                                                     num_outlier_threshs=100)
+        if args.calc_reconstruction:
+            openset_recon_classification_correct = calc_reconstruction_classification(
+                openset_dataset_eval_dict["recon_loss_mus"], max_recon_loss, num_outlier_threshs=1000)
+
+        openset_dataset_eval_dicts[openset_datasets_names[od]] = openset_dataset_eval_dict
+        openset_outlier_probs_dict[openset_datasets_names[od]] = openset_outlier_probs
+        openset_classification_dict[openset_datasets_names[od]] = openset_classification
+        openset_entropy_classification_dict[openset_datasets_names[od]] = openset_entropy_classification
+        if args.calc_reconstruction:
+            openset_recon_classification_dict[openset_datasets_names[od]] = openset_recon_classification_correct
+
+    # Print the results
+    # TODO: maybe log this to file also
+    for other_data_name, other_data_dict in openset_classification_dict.items():
+        print(other_data_name + ' EVT outlier percentage: ' +
+              str(other_data_dict["outlier_percentage"][entropy_threshold_index]))
+    for other_data_name, other_data_dict in openset_entropy_classification_dict.items():
+        print(other_data_name + ' entropy outlier percentage: ' +
+              str(other_data_dict["entropy_outlier_percentage"][entropy_threshold_index]))
+    if args.calc_reconstruction:
+        for other_data_name, other_data_dict in openset_recon_classification_dict.items():
+            print(other_data_name + ' reconstruction loss outlier percentage: ' +
+                  str(other_data_dict["reconstruction_outlier_percentage"][recon_threshold_index]))
 
     # joint prediction uncertainty plot for all datasets
-    visualize_classification_uncertainty(dataset_eval_dict["out_mus_correct"],
-                                         dataset_eval_dict["out_sigmas_correct"],
-                                         openset_dataset_eval_dict["out_mus"],
-                                         openset_dataset_eval_dict["out_sigmas"],
-                                         openset_dataset_eval_dict2["out_mus"],
-                                         openset_dataset_eval_dict2["out_sigmas"],
-                                         args.dataset + ' (trained)', args.openset_dataset, args.openset_dataset2,
-                                         args.var_samples, save_path)
+    if args.var_samples > 1:
+        visualize_classification_uncertainty(dataset_eval_dict["out_mus_correct"],
+                                             dataset_eval_dict["out_sigmas_correct"],
+                                             openset_dataset_eval_dicts,
+                                             "out_mus", "out_sigmas",
+                                             args.dataset + ' (trained)',
+                                             args.var_samples, save_path)
 
-    # get outlier probabilities of open set dataset 2
-    openset_distances_to_z_means2 = calc_distances_to_means(mean_zs, openset_dataset_eval_dict2["zs"],
-                                                            args.distance_function)
+    # visualize the outlier probabilities
+    visualize_weibull_outlier_probabilities(outlier_probs_correct, openset_outlier_probs_dict,
+                                            args.dataset + ' (trained)', save_path, tailsize)
 
-    openset_outlier_probs2 = calc_outlier_probs(weibull_models, openset_distances_to_z_means2)
+    # histograms
+    visualize_classification_scores(dataset_eval_dict["out_mus_correct"], openset_dataset_eval_dicts, 'out_mus',
+                                    args.dataset + ' (trained)', save_path)
+    visualize_entropy_histogram(dataset_eval_dict["out_entropy"], openset_dataset_eval_dicts,
+                                dataset_entropy_classification_correct["entropy_thresholds"][-1], "out_entropy",
+                                args.dataset + ' (trained)', save_path)
+    if args.calc_reconstruction:
+        visualize_recon_loss_histogram(dataset_eval_dict["recon_loss_mus"], openset_dataset_eval_dicts,
+                                       dataset_recon_classification_correct["reconstruction_thresholds"][-1],
+                                       "recon_loss_mus", args.dataset + ' (trained)', save_path)
 
-    visualize_weibull_outlier_probabilities(outlier_probs_correct, openset_outlier_probs2,
-                                            args.dataset, args.openset_dataset2, save_path, tailsize)
-
-    # getting outlier classification accuracy for open set dataset 2
-    openset_classification2 = calc_openset_classification(openset_outlier_probs2, dataset.num_classes,
-                                                          num_outlier_threshs=100)
-
-    # joint plot for outlier detection accuracy for seen and both unseen datasets
+    # joint plot for outlier detection accuracy for both seen and unseen datasets
     visualize_openset_classification(dataset_classification_correct["outlier_percentage"],
-                                     openset_classification["outlier_percentage"],
-                                     openset_classification2["outlier_percentage"],
-                                     args.dataset + ' (trained)', args.openset_dataset, args.openset_dataset2,
+                                     openset_classification_dict, "outlier_percentage",
+                                     args.dataset + ' (trained)',
                                      dataset_classification_correct["thresholds"], save_path, tailsize)
+    visualize_entropy_classification(dataset_entropy_classification_correct["entropy_outlier_percentage"],
+                                     openset_entropy_classification_dict, "entropy_outlier_percentage",
+                                     args.dataset + ' (trained)',
+                                     dataset_entropy_classification_correct["entropy_thresholds"], save_path)
+    if args.calc_reconstruction:
+        visualize_reconstruction_classification(dataset_recon_classification_correct["reconstruction_outlier_percentage"],
+                                                openset_recon_classification_dict, "reconstruction_outlier_percentage",
+                                                args.dataset + ' (trained)',
+                                                dataset_recon_classification_correct["reconstruction_thresholds"],
+                                                save_path, autoregression=args.autoregression)
 
 
 if __name__ == '__main__':
