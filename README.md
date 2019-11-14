@@ -72,12 +72,25 @@ Our (O)CDVAE models can be turned into their autoregressive counterparts with th
 
 	python3 main.py --autoregression True --out-channels 60 --pixel-cnn-channels 60 --pixel-cnn-layers 3 --pixel-cnn-kernel-size 7
 	
-## Standalone script for open set dataset evaluation with a trained model
-We provide a separate standalone script to simply evaluate open set dataset outlier rejection rates on an already trained model by specifying the dataset it has been trained on and choosing unseen datasets to evaluate on. The script is called `eval_openset.py` and uses the same command line parser. The `--resume path/to/model.pth.tar` option needs to be specified to load an already trained model. 
-
-## Logging and visualization
+### Logging and visualization
 We save visualizations to a folder on hard-drive and add them to the respective TensorBoard instance. This TensorBoard log file also contains all history of losses and our continual learning metrics as described in the paper. Each experiment generates a new folder that contains the major important command line options in its name and a time stamp to quickly distinguish experiments. A full specification of command line arguments is further saved to file and to the TensorBoard text tab.
 
 You can visualize the TensorBoard log by pointing to the automatically generated runs/ folder:
 
 	tensorboard --logdir runs/
+	
+## Standalone script for open set dataset evaluation with a trained model
+We provide a separate standalone script to simply evaluate open set dataset outlier rejection rates on an already trained model by specifying the dataset it has been trained on and choosing unseen datasets to evaluate on. The script is called `eval_openset.py` and uses the same command line parser. The `--resume path/to/model.pth.tar` option needs to be specified to load an already trained model. It will print inlier percentages and outlier percentages for all specified datasets and methods in the paper, as well as produce corresponding figures.
+
+The open set datasets can be specified in a comma separated string as shown in the following example:
+
+	python3 eval_openset.py --resume <path/to/model> --openset-datasets 'FashionMNIST,AudioMNIST,CIFAR10,CIFAR100,SVHN'
+
+
+In addition you can optionally specify number of samples to draw from the approximate posterior `--var-samples` and the option to evaluate the out-of-distribution detection using reconstruction loss. Note that for a large number of samples, our Weibull EVT approach (sitting directly on z) is very fast to compute. The predictive entropy of the classifier is similarly quick to compute as it consists of only additional matrix multiplication. However, to use reconstruction loss to distinguish datasets implies recalculating the entire decoder for every sample (batch). We have thus added an extra command line option named `--calc-reconstruction` that can be set to `True` if this calculation is desired for reasons of comparison and reproducing the figures and tables in the paper. Here is an example, averaged over 100 samples as reported in the paper:
+
+	python3 eval_openset.py --resume <path/to/model> --openset-datasets 'FashionMNIST,AudioMNIST,CIFAR10,CIFAR100,SVHN' --var-samples 100 --calc-reconstruction True
+	
+
+
+
