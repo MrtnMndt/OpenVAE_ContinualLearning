@@ -1,5 +1,6 @@
 import time
 import torch
+import torch.nn as nn
 from lib.Utility.metrics import AverageMeter
 from lib.Utility.metrics import accuracy
 
@@ -34,11 +35,14 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, args):
     model.train()
 
     end = time.time()
-
+    wordvec=[]
+    if args.wordvec:
+        wordvec = torch.from_numpy(Dataset.wordvec).float().to(device)
     # train
     for i, (inp, target) in enumerate(Dataset.train_loader):
         inp = inp.to(device)
         target = target.to(device)
+
 
         recon_target = inp
         class_target = target
@@ -67,11 +71,26 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, args):
             recon_target = (recon_target * 255).long()
 
         # calculate loss
-        class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
+        mu_c = None
+        if args.wordvec:
+            # word_embedding = model.module.word_embedding(wordvec[:model.module.num_classes])
+            word_embedding = model.module.word_embedding(wordvec)
+            mu_c = word_embedding[target]
+
+        class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, mu_c, std,
                                                      device, args)
 
         # add the individual loss components together and weight the KL term.
-        loss = class_loss + recon_loss + args.var_beta * kld_loss
+        re_weight = 1
+        if args.no_recon:
+            re_weight = 0 
+
+        loss = class_loss + re_weight * recon_loss + args.var_beta * kld_loss
+        if args.distill_wordvec:
+            word_embedding_class = model.module.classifier(word_embedding)
+            w_class_loss = nn.CrossEntropyLoss()(word_embedding_class, torch.arange(model.module.num_classes).to(device))
+            # w_class_loss = nn.CrossEntropyLoss()(word_embedding_class, torch.arange(100).to(device))
+            loss +=w_class_loss
 
         # take mean to compute accuracy. Note if variational samples are 1 this only gets rid of a dummy dimension.
         output = torch.mean(class_samples, dim=0)
@@ -113,6 +132,8 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, args):
     writer.add_scalar('training/train_KLD', kld_losses.avg, epoch)
     writer.add_scalar('training/train_class_loss', class_losses.avg, epoch)
     writer.add_scalar('training/train_recon_loss', recon_losses.avg, epoch)
+    if args.distill_wordvec:
+        writer.add_scalar('training/train_w_class_loss', w_class_loss.item(), epoch)
 
     # If the log weights argument is specified also add parameter and gradient histograms to TensorBoard.
     if args.log_weights:

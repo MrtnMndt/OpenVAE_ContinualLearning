@@ -451,3 +451,128 @@ class WRN(nn.Module):
             output_samples[i] = self.decode(z)
             classification_samples[i] = self.classifier(z)
         return classification_samples, output_samples, z_mean, z_std
+
+class LambdaLayer(nn.Module):
+    def __init__(self, lambd):
+        super(LambdaLayer, self).__init__()
+        self.lambd = lambd
+
+    def forward(self, x):
+        return self.lambd(x)
+
+
+class BasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, in_planes, planes, stride=1, option='A'):
+        super(BasicBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.act1 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.act2 = nn.ReLU(inplace=True)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != planes:
+            if option == 'A':
+                """
+                For CIFAR10 ResNet paper uses option A.
+                """
+                self.shortcut = LambdaLayer(lambda x:
+                                            nn.functional.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, planes//4, planes//4), "constant", 0))
+            elif option == 'B':
+                self.shortcut = nn.Sequential(
+                     nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                     nn.BatchNorm2d(self.expansion * planes)
+                )
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.act1(out)
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = self.act2(out)
+        return out
+
+class ResNet(nn.Module):
+    def __init__(self, device, num_classes, num_colors, args):
+        super(ResNet, self).__init__()
+
+        self.depth = args.wrn_depth
+        self.batch_norm = args.batch_norm
+        self.patch_size = args.patch_size
+        self.batch_size = args.batch_size
+        self.num_colors = num_colors
+        self.num_classes = num_classes
+        self.device = device
+        self.out_channels = args.out_channels
+        self.wordvec_dim = args.wordvec_dim
+
+        self.seen_tasks = []
+
+        self.num_samples = args.var_samples
+        self.latent_dim = args.var_latent_dim
+
+        self.nChannels = [16,16,32,64]
+
+        self.num_block_layers = int((self.depth-2)/6)
+
+        self.in_planes = 16
+
+        self.encoder = nn.Sequential(OrderedDict([
+            ('encoder_conv1',nn.Conv2d(num_colors, self.nChannels[0], kernel_size=3, stride=1, padding=1, bias=False)),
+            ('encoder_bn1', nn.BatchNorm2d(16)),
+            ('encoder_act1',nn.ReLU(inplace=True)),
+            ('encoder_block1', self._make_layer(BasicBlock, self.nChannels[1], self.num_block_layers, stride=1)),
+            ('encoder_block2', self._make_layer(BasicBlock, self.nChannels[2], self.num_block_layers, stride=2)),
+            ('encoder_block3', self._make_layer(BasicBlock, self.nChannels[3], self.num_block_layers, stride=2)),
+            ('encoder_avgpool1', nn.AvgPool2d(8)),
+            ]))
+        self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y = get_feat_size(self.encoder, self.patch_size,
+                                                                                          self.num_colors)
+        self.latent_mu = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_x * self.enc_channels,
+                                   self.latent_dim, bias=False)
+        self.latent_std = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_y * self.enc_channels,
+                                    self.latent_dim, bias=False)
+
+        self.word_embedding = nn.Sequential(
+                nn.Linear(self.wordvec_dim, self.wordvec_dim),
+                nn.LeakyReLU(0.2),
+                nn.Linear(self.wordvec_dim, self.latent_dim))
+
+        self.classifier = nn.Sequential(nn.Linear(self.latent_dim, num_classes, bias=False))
+
+        self.latent_decoder = nn.Linear(self.latent_dim, self.enc_spatial_dim_x * self.enc_spatial_dim_y *
+                                        self.enc_channels, bias=False)
+
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+
+        return nn.Sequential(*layers)
+
+    def encode(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        z_mean = self.latent_mu(x)
+        z_std = self.latent_std(x)
+        return z_mean, z_std
+
+    def reparameterize(self, mu, std):
+        eps = std.data.new(std.size()).normal_()
+        return eps.mul(std).add(mu)
+
+    def forward(self, x):
+        z_mean, z_std = self.encode(x)
+        output_samples = torch.zeros(self.num_samples, x.size(0), self.out_channels, self.patch_size,
+                                     self.patch_size).to(self.device)
+        classification_samples = torch.zeros(self.num_samples, x.size(0), self.num_classes).to(self.device)
+        for i in range(self.num_samples):
+            z = self.reparameterize(z_mean, z_std)
+            classification_samples[i] = self.classifier(z)
+        return classification_samples, output_samples, z_mean, z_std

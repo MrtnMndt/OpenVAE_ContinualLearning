@@ -2,13 +2,13 @@ import math
 import os
 import torchvision
 import torch.utils.data
+import torchvision.transforms as transforms
 from tqdm import tqdm
 from tqdm import trange
 import lib.OpenSet.meta_recognition as mr
 from lib.Training.evaluate import sample_per_class_zs
 import lib.Datasets.datasets as all_datasets
 from lib.Training.evaluate import eval_dataset
-
 
 def get_incremental_dataset(parent_class, args):
     """
@@ -26,6 +26,19 @@ def get_incremental_dataset(parent_class, args):
         parent_class: Dataset class to inherit from for the class incremental scenario.
         args (dict): Command line arguments.
     """
+
+    class CustomTensorDataset(torch.utils.data.TensorDataset):
+    #torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+        def __init__(self, *tensors, transform=None):
+            assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
+            self.tensors = tensors
+            self.transform = transform
+
+        def __getitem__(self, index):
+            if self.transform:
+                return tuple(tensor[index] if i!=0 else self.transform(tensor[index]) for i, tensor in enumerate(self.tensors))
+            return tuple(tensor[index] for tensor in self.tensors)
+
 
     class IncrementalDataset(parent_class):
         """
@@ -69,6 +82,8 @@ def get_incremental_dataset(parent_class, args):
             self.trainsets, self.valsets = {}, {}
 
             self.class_to_idx = {}
+            if self.train_transforms:
+                self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
 
             # Split the parent dataset class into into datasets per class
             self.__get_incremental_datasets()
@@ -121,9 +136,44 @@ def get_incremental_dataset(parent_class, args):
                     targets_list[i] = torch.LongTensor(targets_list[i])
 
                     if j == 0:
-                        self.trainsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        self.trainsets[i] = CustomTensorDataset(tensors_list[i], targets_list[i],transform=self.train_transforms)
+                        # self.trainsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
                     else:
-                        self.valsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        self.valsets[i] = CustomTensorDataset(tensors_list[i], targets_list[i],transform=self.val_transforms)
+                        # self.valsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+
+        def __get_transforms(self, patch_size):
+            if self.gray_scale:
+                train_transforms = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.Resize(size=(patch_size, patch_size)),
+                    transforms.Grayscale(num_output_channels=1),
+                    transforms.ToTensor(),
+                    ])
+
+                val_transforms = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.Resize(size=(patch_size, patch_size)),
+                    transforms.Grayscale(num_output_channels=1),
+                    transforms.ToTensor(),
+                    ])
+            else:
+                train_transforms = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.Resize(size=(patch_size, patch_size)),
+                    transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                ])
+
+                val_transforms = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.Resize(size=(patch_size, patch_size)),
+                    transforms.ToTensor(),
+                ])
+
+            return train_transforms, val_transforms
+
 
         def __get_initial_dataset(self):
             """

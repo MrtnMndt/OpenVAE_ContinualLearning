@@ -52,6 +52,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
     batch_time = AverageMeter()
     top1 = AverageMeter()
+    w_top1 = AverageMeter()
 
     # confusion matrix
     confusion = ConfusionMeter(model.module.num_classes, normalized=True)
@@ -60,7 +61,9 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
     model.eval()
 
     end = time.time()
-
+    wordvec=[]
+    if args.wordvec:
+        wordvec = torch.from_numpy(Dataset.wordvec).float().to(device)
     # evaluate the entire validation dataset
     with torch.no_grad():
         for i, (inp, target) in enumerate(Dataset.val_loader):
@@ -85,7 +88,11 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 recon_samples = recon_samples_autoregression
 
             # compute loss
-            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu,
+            mu_c = None
+            if args.wordvec:
+                mu_c = model.module.word_embedding(wordvec[target])
+                wordvec_output = model.module.classifier(mu_c)
+            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, mu_c,
                                                          std, device, args)
 
             # For autoregressive models also update the bits per dimension value, converted from the obtained nats
@@ -94,13 +101,28 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
             # take mean to compute accuracy
             # (does nothing if there isn't more than 1 sample per input other than removing dummy dimension)
-            class_output = torch.mean(class_samples, dim=0)
+            class_output = torch.mean(class_samples, dim=0) #
             recon_output = torch.mean(recon_samples, dim=0)
+            # if args.wordvec:
+                #mu = batch*dim
+                #wordvec = Class*dim 
+
+                # class_output = mu.unsqueeze(1) - wordvec
+                # class_output = torch.norm(class_output,p=2,dim=-1)
+                # class_output = -1* class_output
 
             # measure accuracy, record loss, fill confusion matrix
             prec1 = accuracy(class_output, target)[0]
             top1.update(prec1.item(), inp.size(0))
             confusion.add(class_output.data, target)
+
+            if args.wordvec:
+                mu_c         = model.module.word_embedding(wordvec[:model.module.num_classes])
+                wordvec_output = mu.unsqueeze(1) - mu_c
+                wordvec_output = torch.norm(wordvec_output,p=2,dim=-1)
+                wordvec_output = -1* wordvec_output
+                w_prec1 = accuracy(wordvec_output, target)[0]
+                w_top1.update(w_prec1.item(), inp.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -175,7 +197,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             # If we are at the end of validation, create one mini-batch of example generations. Only do this every
             # other epoch specified by visualization_epoch to avoid generation of lots of images and computationally
             # expensive calculations of the autoregressive model's generation.
-            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0:
+            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0 and args.no_recon==False:
                 # generation
                 gen = model.module.generate()
 
@@ -197,6 +219,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
     # TensorBoard summary logging
     writer.add_scalar('validation/val_precision@1', top1.avg, epoch)
+    writer.add_scalar('validation/val_w_precision@1', w_top1.avg, epoch)
     writer.add_scalar('validation/val_average_loss', losses.avg, epoch)
     writer.add_scalar('validation/val_class_loss', class_losses.avg, epoch)
     writer.add_scalar('validation/val_recon_loss_nat', recon_losses_nat.avg, epoch)

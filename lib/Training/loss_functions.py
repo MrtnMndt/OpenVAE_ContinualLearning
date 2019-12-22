@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-def unified_loss_function(output_samples_classification, target, output_samples_recon, inp, mu, std, device, args):
+def unified_loss_function(output_samples_classification, target, output_samples_recon, inp, mu, mu_c, std, device, args):
     """
     Computes the unified model's joint loss function consisting of a term for reconstruction, a KL term between
     approximate posterior and prior and the loss for the generative classifier. The number of variational samples
@@ -52,6 +52,9 @@ def unified_loss_function(output_samples_classification, target, output_samples_
     rl = torch.mean(recon_losses, dim=0)
 
     # Compute the KL divergence, normalized by latent dimensionality
-    kld = -0.5 * torch.sum(1 + torch.log(eps + std ** 2) - (mu ** 2) - (std ** 2)) / torch.numel(mu)
+    if args.wordvec:
+        kld = -0.5 * torch.sum(1 + torch.log(eps + std ** 2) - ((mu-mu_c)** 2) - (std ** 2)) / torch.numel(mu)
+    else:
+        kld = -0.5 * torch.sum(1 + torch.log(eps + std ** 2) - (mu ** 2) - (std ** 2)) / torch.numel(mu)
 
     return cl, rl, kld

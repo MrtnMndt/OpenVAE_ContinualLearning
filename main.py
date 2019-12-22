@@ -7,6 +7,8 @@ import random
 from time import gmtime, strftime
 import numpy as np
 import pickle
+import copy
+import pdb
 
 # Tensorboard for PyTorch logging and visualization
 from torch.utils.tensorboard import SummaryWriter
@@ -41,6 +43,9 @@ def main():
     print("Command line options:")
     for arg in vars(args):
         print(arg, getattr(args, arg))
+
+    if args.debug:
+        pdb.set_trace()
 
     if args.cross_dataset and not args.incremental_data:
         raise ValueError('cross-dataset training possible only if incremental-data flag set')
@@ -163,6 +168,12 @@ def main():
             epoch_multiplier = ((len(task_order) - (args.num_base_tasks + 1)) / args.num_increment_tasks) + 1
 
         print("Task order: ", task_order)
+        temp_embedding = []
+        if args.wordvec:
+            for cls_num in task_order:
+                cls_name = list(dataset.class_to_idx.keys())[list(dataset.class_to_idx.values()).index(cls_num)]
+                temp_embedding.append(dataset.wordvec[cls_name])             
+            # dataset.wordvec = temp_embedding
         # log the task order into the text file
         log.write('task_order:' + str(task_order) + '\n')
         args.task_order = task_order
@@ -174,9 +185,19 @@ def main():
 
         # Get the incremental dataset
         dataset = inc_dataset_init_method(torch.cuda.is_available(), device, task_order, args)
+        if args.wordvec:
+            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
+            dataset.wordvec = np.asarray(temp_embedding)
     else:
         # add command line options to TensorBoard
         args_to_tensorboard(writer, args)
+        temp_embedding = []
+        if args.wordvec:
+            for cls_num in range(dataset.num_classes):
+                cls_name = list(dataset.class_to_idx.keys())[cls_num]
+                temp_embedding.append(dataset.wordvec[cls_name])
+            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
+            dataset.wordvec = np.asarray(temp_embedding)
 
     log.close()
 
@@ -196,6 +217,7 @@ def main():
 
     # build the model
     model = net_init_method(device, num_classes, num_colors, args)
+    # model = net_init_method(device, 100, num_colors, args)
 
     # optionally add the autoregressive decoder
     if args.autoregression:
@@ -214,6 +236,7 @@ def main():
 
     # Define optimizer and loss function (criterion)
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
 
     epoch = 0
     best_prec = 0
@@ -236,6 +259,8 @@ def main():
 
     # optimize until final amount of epochs is reached. Final amount of epochs is determined through the
     while epoch < (args.epochs * epoch_multiplier):
+        if epoch+2 == epoch%args.epochs:
+            print("debug perpose")
         # visualize the latent space before each task increment and at the end of training if it is 2-D
         if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
             if model.module.latent_dim == 2:
@@ -276,11 +301,13 @@ def main():
                                     - model.module.num_classes, WeightInitializer)
                     model.module.num_classes = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
                 else:
+                    # model.module.num_classes = 100
                     model.module.num_classes += args.num_increment_tasks
                     grow_classifier(device, model.module.classifier, args.num_increment_tasks, WeightInitializer)
 
                 # reset moving averages etc. of the optimizer
                 optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+                # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
 
             # change the number of seen classes
             if epoch % args.epochs == 0:

@@ -101,3 +101,12 @@ parser.add_argument('--out-channels', default=60, type=int, help='number of outp
 parser.add_argument('--pixel-cnn-channels', default=60, type=int, help='num filters in PixelCNN convs (default: 60)')
 parser.add_argument('--pixel-cnn-layers', default=3, type=int, help='number of PixelCNN layers (default: 3)')
 parser.add_argument('--pixel-cnn-kernel-size', default=7, type=int, help='PixelCNN conv kernel size (default: 7)')
+
+# Debug
+parser.add_argument('--debug','-d',action = 'store_true', help = 'pdb enable')
+
+# Word2vec Prior
+parser.add_argument("--wordvec", action = 'store_true', help='use word2vec as prior')
+parser.add_argument("--no-recon", action = 'store_true', help='no recon loss')
+parser.add_argument("--wordvec-dim", default=300, type=int, help='word2vec dim size')
+parser.add_argument("--distill-wordvec", action="store_true")
