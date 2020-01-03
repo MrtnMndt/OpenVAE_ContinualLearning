@@ -20,6 +20,7 @@ import torch.backends.cudnn as cudnn
 # Custom library
 import lib.Models.architectures as architectures
 from lib.Models.pixelcnn import PixelCNN
+from lib.Models.gan import Gan_Model
 import lib.Datasets.datasets as datasets
 from lib.Models.initialization import WeightInit
 from lib.Models.architectures import grow_classifier
@@ -225,6 +226,12 @@ def main():
                                   num_layers=args.pixel_cnn_layers, k=args.pixel_cnn_kernel_size,
                                   padding=args.pixel_cnn_kernel_size//2)
 
+    #optionally add the gan discriminator
+    # elif args.gan:
+    #     global train
+    #     from lib.Training.train import train_gan as train
+    #     model.discriminator = Gan_Model(mdevice, num_classes, num_colors, args)
+
     # Parallel container for multi GPU use and cast to available device
     model = torch.nn.DataParallel(model).to(device)
     print(model)
@@ -237,6 +244,15 @@ def main():
     # Define optimizer and loss function (criterion)
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
+    # if args.gan:
+    #     optimizer = {}
+    #     Encoder_param = [model.encoder.parameters(), model.latent_mu.parameters(), model.latent_std.parameters(), model.classifier.parameters()]
+    #     Gen_param = [model.latent_decoder.parameters(), model.decoder.parameters()]
+    #     Dis_param = [model.discriminator.parameters()]
+    #     optimizer['enc'] = torch.optim.Adam(Encoder_param, args.learning_rate)
+    #     optimizer['gen'] = torch.optim.Adam(Gen_param, args.learning_rate)
+    #     optimizer['dis'] = torch.optim.Adam(Dis_param, args.learning_rate)
+    #     model = torch.nn.DataParallel(model).to(device)
 
     epoch = 0
     best_prec = 0

@@ -257,6 +257,230 @@ class FashionMNIST:
 
         return train_loader, val_loader
 
+class Flower102:
+    """
+    Oxford Flower dataset featuring gray-scale 28x28 images of
+    Zalando clothing items belonging to ten different classes.
+    Dataset implemented with torchvision.datasets.FashionMNIST.
+
+    Parameters:
+        args (dict): Dictionary of (command line) arguments.
+            Needs to contain batch_size (int) and workers(int).
+        is_gpu (bool): True if CUDA is enabled.
+            Sets value of pin_memory in DataLoader.
+
+    Attributes:
+        train_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor, repeating gray-scale image to
+            three channel for consistent use with different architectures
+            and normalization.
+        val_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor, repeating gray-scale image to
+            three channel for consistent use with different architectures
+            and normalization.
+        trainset (torch.utils.data.TensorDataset): Training set wrapper.
+        valset (torch.utils.data.TensorDataset): Validation set wrapper.
+        train_loader (torch.utils.data.DataLoader): Training set loader with shuffling.
+        val_loader (torch.utils.data.DataLoader): Validation set loader.
+        class_to_idx (dict): Defines mapping from class names to integers.
+    """
+
+    def __init__(self, is_gpu, args):
+        self.num_classes = 103
+        self.gray_scale = args.gray_scale
+
+        self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
+
+        self.trainset, self.valset = self.get_dataset()
+        self.train_loader, self.val_loader = self.get_dataset_loader(args.batch_size, args.workers, is_gpu)
+
+        self.class_to_idx = {'filler': 0,
+                            'pink primrose': 1 ,
+                            'hard-leaved pocket orchid': 2 ,
+                            'canterbury bells': 3 ,
+                            'sweet pea': 4 ,
+                            'english marigold': 5 ,
+                            'tiger lily': 6 ,
+                            'moon orchid': 7 ,
+                            'bird of paradise': 8 ,
+                            'monkshood': 9 ,
+                            'globe thistle': 10 ,
+                            'snapdragon': 11 ,
+                            "colt's foot": 12 ,
+                            'king protea': 13 ,
+                            'spear thistle': 14 ,
+                            'yellow iris': 15 ,
+                            'globe-flower': 16 ,
+                            'purple coneflower': 17 ,
+                            'peruvian lily': 18 ,
+                            'balloon flower': 19 ,
+                            'giant white arum lily': 20 ,
+                            'fire lily': 21 ,
+                            'pincushion flower': 22 ,
+                            'fritillary': 23 ,
+                            'red ginger': 24 ,
+                            'grape hyacinth': 25 ,
+                            'corn poppy': 26 ,
+                            'prince of wales feathers': 27 ,
+                            'stemless gentian': 28 ,
+                            'artichoke': 29 ,
+                            'sweet william': 30 ,
+                            'carnation': 31 ,
+                            'garden phlox': 32 ,
+                            'love in the mist': 33 ,
+                            'mexican aster': 34 ,
+                            'alpine sea holly': 35 ,
+                            'ruby-lipped cattleya': 36 ,
+                            'cape flower': 37 ,
+                            'great masterwort': 38 ,
+                            'siam tulip': 39 ,
+                            'lenten rose': 40 ,
+                            'barbeton daisy': 41 ,
+                            'daffodil': 42 ,
+                            'sword lily': 43 ,
+                            'poinsettia': 44 ,
+                            'bolero deep blue': 45 ,
+                            'wallflower': 46 ,
+                            'marigold': 47 ,
+                            'buttercup': 48 ,
+                            'oxeye daisy': 49 ,
+                            'common dandelion': 50 ,
+                            'petunia': 51 ,
+                            'wild pansy': 52 ,
+                            'primula': 53 ,
+                            'sunflower': 54 ,
+                            'pelargonium': 55 ,
+                            'bishop of llandaff': 56 ,
+                            'gaura': 57 ,
+                            'geranium': 58 ,
+                            'orange dahlia': 59 ,
+                            'pink-yellow dahlia?': 60 ,
+                            'cautleya spicata': 61 ,
+                            'japanese anemone': 62 ,
+                            'black-eyed susan': 63 ,
+                            'silverbush': 64 ,
+                            'californian poppy': 65 ,
+                            'osteospermum': 66 ,
+                            'spring crocus': 67 ,
+                            'bearded iris': 68 ,
+                            'windflower': 69 ,
+                            'tree poppy': 70 ,
+                            'gazania': 71 ,
+                            'azalea': 72 ,
+                            'water lily': 73 ,
+                            'rose': 74 ,
+                            'thorn apple': 75 ,
+                            'morning glory': 76 ,
+                            'passion flower': 77 ,
+                            'lotus': 78 ,
+                            'toad lily': 79 ,
+                            'anthurium': 80 ,
+                            'frangipani': 81 ,
+                            'clematis': 82 ,
+                            'hibiscus': 83 ,
+                            'columbine': 84 ,
+                            'desert-rose': 85 ,
+                            'tree mallow': 86 ,
+                            'magnolia': 87 ,
+                            'cyclamen ': 88 ,
+                            'watercress': 89 ,
+                            'canna lily': 90 ,
+                            'hippeastrum ': 91 ,
+                            'bee balm': 92 ,
+                            'ball moss': 93 ,
+                            'foxglove': 94 ,
+                            'bougainvillea': 95 ,
+                            'camellia': 96 ,
+                            'mallow': 97 ,
+                            'mexican petunia': 98 ,
+                            'bromelia': 99 ,
+                            'blanket flower': 100 ,
+                            'trumpet creeper': 101 ,
+                            'blackberry lily': 102 ,}
+    
+
+    def __get_transforms(self, patch_size):
+        # optionally scale the images and repeat to three channels
+        # important note: these transforms will only be called once during the
+        # creation of the dataset and no longer in the incremental datasets that inherit.
+        # Adding data augmentation here is thus the wrong place!
+        if self.gray_scale:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+                ])
+
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+                ])
+        else:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
+                # transforms.Resize(size=(patch_size, patch_size)),
+                transforms.ToTensor(),
+            ])
+
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.ToTensor(),
+            ])
+
+        return train_transforms, val_transforms
+
+    def get_dataset(self):
+        """
+        Uses torchvision.datasets.ImageFoder to load dataset.
+        Downloads dataset if doesn't exist already.
+        url:https://s3.amazonaws.com/content.udacity-data.com/nd089/flower_data.tar.gz
+
+        Returns:
+             torch.utils.data.TensorDataset: trainset, valset
+        """
+
+        root = '.'
+        for cur_file in ['datasets','flower_data','102flowers']:
+            root = os.path.join(root,cur_file)
+            if not os.path.exists(root):
+                os.path.mkdir(root)
+        root = os.path.join(root,'jpg')
+        
+        trainset = datasets.ImageFoder(root=root+'/train/', transform=self.train_transforms,
+                                         target_transform=None)
+        valset = datasets.ImageFoder(root=root+'/valid/', transform=self.val_transforms,
+                                       target_transform=None)
+
+        return trainset, valset
+
+    def get_dataset_loader(self, batch_size, workers, is_gpu):
+        """
+        Defines the dataset loader for wrapped dataset
+
+        Parameters:
+            batch_size (int): Defines the batch size in data loader
+            workers (int): Number of parallel threads to be used by data loader
+            is_gpu (bool): True if CUDA is enabled so pin_memory is set to True
+
+        Returns:
+             torch.utils.data.DataLoader: train_loader, val_loader
+        """
+
+        train_loader = torch.utils.data.DataLoader(
+            self.trainset,
+            batch_size=batch_size, shuffle=True,
+            num_workers=workers, pin_memory=is_gpu, sampler=None)
+
+        val_loader = torch.utils.data.DataLoader(
+            self.valset,
+            batch_size=batch_size, shuffle=False,
+            num_workers=workers, pin_memory=is_gpu)
+
+        return train_loader, val_loader
+
 
 class AudioMNIST:
     """
@@ -977,6 +1201,8 @@ class SVHN:
         else:
             train_transforms = transforms.Compose([
                 transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
 

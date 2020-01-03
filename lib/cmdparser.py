@@ -34,8 +34,11 @@ parser.add_argument('--wrn-embedding-size', type=int, default=48,
 
 # Training hyper-parameters
 parser.add_argument('--epochs', default=120, type=int, help='number of total epochs to run')
+parser.add_argument('--gan-epochs', default=120, type=int, help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=128, type=int, help='mini-batch size (default: 128)')
 parser.add_argument('-lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate (default: 1e-3)')
+parser.add_argument('-lrG', '--learning-rate-G', default=2e-4, type=float)
+parser.add_argument('-lrD', '--learning-rate-D', default=2e-4, type=float)
 parser.add_argument('-bn', '--batch-norm', default=1e-5, type=float, help='batch normalization (default 1e-5)')
 parser.add_argument('-pf', '--print-freq', default=100, type=int, help='print frequency (default: 100)')
 parser.add_argument('-log', '--log-weights', default=False, type=bool,
@@ -110,3 +113,7 @@ parser.add_argument("--wordvec", action = 'store_true', help='use word2vec as pr
 parser.add_argument("--no-recon", action = 'store_true', help='no recon loss')
 parser.add_argument("--wordvec-dim", default=300, type=int, help='word2vec dim size')
 parser.add_argument("--distill-wordvec", action="store_true")
+
+# WGAN-GP
+parser.add_argument('--gan', action = 'store_true', help ='train generator as gan fashion')
+parser.add_argument('--lambda_gp', default = 10, type =float, help ='penalty')

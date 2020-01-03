@@ -103,13 +103,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             # (does nothing if there isn't more than 1 sample per input other than removing dummy dimension)
             class_output = torch.mean(class_samples, dim=0) #
             recon_output = torch.mean(recon_samples, dim=0)
-            # if args.wordvec:
-                #mu = batch*dim
-                #wordvec = Class*dim 
-
-                # class_output = mu.unsqueeze(1) - wordvec
-                # class_output = torch.norm(class_output,p=2,dim=-1)
-                # class_output = -1* class_output
 
             # measure accuracy, record loss, fill confusion matrix
             prec1 = accuracy(class_output, target)[0]
