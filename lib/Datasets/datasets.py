@@ -447,11 +447,11 @@ class Flower102:
             root = os.path.join(root,cur_file)
             if not os.path.exists(root):
                 os.path.mkdir(root)
-        root = os.path.join(root,'jpg')
+        # root = os.path.join(root,'jpg')
         
-        trainset = datasets.ImageFoder(root=root+'/train/', transform=self.train_transforms,
+        trainset = datasets.ImageFolder(root=root+'/train/', transform=self.train_transforms,
                                          target_transform=None)
-        valset = datasets.ImageFoder(root=root+'/valid/', transform=self.val_transforms,
+        valset = datasets.ImageFolder(root=root+'/valid/', transform=self.val_transforms,
                                        target_transform=None)
 
         return trainset, valset
@@ -1168,6 +1168,7 @@ class SVHN:
     def __init__(self, is_gpu, args):
         self.num_classes = 10
         self.gray_scale = args.gray_scale
+        self.gan_input = args.gan
 
         self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
 
@@ -1198,6 +1199,17 @@ class SVHN:
                 transforms.Grayscale(num_output_channels=1),
                 transforms.ToTensor(),
                 ])
+        elif self.gan_input:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ])
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.ToTensor(),
+            ])
         else:
             train_transforms = transforms.Compose([
                 transforms.Resize(size=(patch_size, patch_size)),

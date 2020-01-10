@@ -171,6 +171,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
     Dis_losses = AverageMeter()
     Real_losses = AverageMeter()
     Fake_losses = AverageMeter()
+    Feature_losses = AverageMeter()
     losses = AverageMeter()
 
     batch_time = AverageMeter()
@@ -203,7 +204,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
         data_time.update(time.time() - end)
 
         #D
-        if i % 2 ==0:
+        if i % args.ratio_D ==0:
             optimizer['dis'].zero_grad()
             D_real = model.module.discriminator(inp)
             D_real_loss = -torch.mean(D_real)
@@ -230,13 +231,19 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
 
         # if i % 5 ==0:
         #G
-        class_samples, recon_samples, mu, std = model(inp)
+        class_samples, recon_samples, mu_real, std_real = model(inp)
         v,b,c,x,y = recon_samples.shape
         recon_samples= recon_samples.view(v*b,c,x,y)
+        feature_loss = 0
+        if args.encoder_dist:
+            with torch.no_grad():
+                _, _, mu_fake, std_fake = model(inp)
+            feature_loss += nn.L1Loss()(mu_real,mu_fake)
         D_fake = model.module.discriminator(recon_samples)
-        recon_loss = nn.L1Loss()(recon_samples,inp)
+        recon_loss = 10*nn.L1Loss()(recon_samples,inp)
         G_fake_loss = -torch.mean(D_fake)
-        G_loss =  G_fake_loss #+ recon_loss
+        G_loss =  G_fake_loss + recon_loss + feature_loss
+        Feature_losses.update(feature_loss.item())
         Gen_losses.update(G_loss.item())
         Fake_losses.update((D_fake_loss+G_fake_loss).item())
 
@@ -253,7 +260,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
         top1.update(prec1.item(), inp.size(0))
 
         class_loss = nn.CrossEntropyLoss()(output, target)
-        recon_loss = nn.MSELoss()(recon_samples,inp)
+        # recon_loss = nn.MSELoss()(recon_samples,inp)
 
         class_losses.update(class_loss.item(), inp.size(0))
         recon_losses.update(recon_loss.item(), inp.size(0))
@@ -285,6 +292,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
     writer.add_scalar('training/train_average_loss', losses.avg, epoch)
     writer.add_scalar('training/train_generator_loss', Gen_losses.avg, epoch)
     writer.add_scalar('training/train_discriminator_loss', Dis_losses.avg, epoch)
+    writer.add_scalar('training/train_feature_loss', Feature_losses.avg, epoch)
     writer.add_scalar('training/train_fake_loss', Fake_losses.avg, epoch)
     writer.add_scalar('training/train_real_loss', Real_losses.avg, epoch)
 

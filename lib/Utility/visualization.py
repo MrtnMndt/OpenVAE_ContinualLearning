@@ -62,7 +62,8 @@ def visualize_image_grid(images, writer, count, name, save_path):
         save_path (str): path where image grid is going to be saved.
     """
     size = images.size(0)
-    imgs = torchvision.utils.make_grid(images, nrow=int(math.sqrt(size)), padding=5)
+    # imgs = torchvision.utils.make_grid(images, nrow=int(math.sqrt(size)), padding=5)
+    imgs = torchvision.utils.make_grid(images, nrow=int(math.sqrt(size)), padding=5, normalize=True, range=(0,1))
     torchvision.utils.save_image(images, os.path.join(save_path, name + '_epoch_' + str(count + 1) + '.png'),
                                  nrow=int(math.sqrt(size)), padding=5)
     writer.add_image(name, imgs, count)

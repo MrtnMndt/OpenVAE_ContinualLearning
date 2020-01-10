@@ -135,48 +135,50 @@ def main():
             best_prec = checkpoint['best_prec']
             best_loss = checkpoint['best_loss']
             model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            # optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-    # global encoder training
-    while epoch < args.epochs:
-        # if epoch+2 == epoch%args.epochs:
-        #     print("debug perpose")
-        # visualize the latent space before each task increment and at the end of training if it is 2-D
-        if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
-            if model.module.latent_dim == 2:
-                print("Calculating and visualizing dataset embedding")
-                # infer the number of current tasks to plot the different classes in the embedding
-                num_tasks = num_classes
+    else:
+        # global encoder training
+        while epoch < args.epochs:
+            # if epoch+2 == epoch%args.epochs:
+            #     print("debug perpose")
+            # visualize the latent space before each task increment and at the end of training if it is 2-D
+            if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
+                if model.module.latent_dim == 2:
+                    print("Calculating and visualizing dataset embedding")
+                    # infer the number of current tasks to plot the different classes in the embedding
+                    num_tasks = num_classes
 
-                zs = get_latent_embedding(model, dataset.train_loader, num_tasks, device)
-                visualize_dataset_in_2d_embedding(writer, zs, args.dataset, save_path, task=num_tasks)
+                    zs = get_latent_embedding(model, dataset.train_loader, num_tasks, device)
+                    visualize_dataset_in_2d_embedding(writer, zs, args.dataset, save_path, task=num_tasks)
 
-        # train
-        train(dataset, model, criterion, epoch, optimizer['enc'], writer, device, args)
+            # train
+            train(dataset, model, criterion, epoch, optimizer['enc'], writer, device, args)
 
-        # evaluate on validation set
-        prec, loss = validate(dataset, model, criterion, epoch, writer, device, save_path, args)
+            # evaluate on validation set
+            prec, loss = validate(dataset, model, criterion, epoch, writer, device, save_path, args)
 
-        # remember best prec@1 and save checkpoint
-        is_best = loss < best_loss
-        best_loss = min(loss, best_loss)
-        best_prec = max(prec, best_prec)
-        save_checkpoint({'epoch': epoch,
-                         'arch': args.architecture,
-                         'state_dict': model.state_dict(),
-                         'best_prec': best_prec,
-                         'best_loss': best_loss,
-                         'optimizer': optimizer['enc'].state_dict()},
-                        is_best, save_path)
+            # remember best prec@1 and save checkpoint
+            is_best = loss < best_loss
+            best_loss = min(loss, best_loss)
+            best_prec = max(prec, best_prec)
+            save_checkpoint({'epoch': epoch,
+                             'arch': args.architecture,
+                             'state_dict': model.state_dict(),
+                             'best_prec': best_prec,
+                             'best_loss': best_loss,
+                             'optimizer': optimizer['enc'].state_dict()},
+                            is_best, save_path)
 
-        # increment epoch counters
-        epoch += 1
+            # increment epoch counters
+            epoch += 1
 
     # Wgan-gp training
+    epoch = 0
     best_prec = 0
     best_loss = random.getrandbits(128)
     while epoch < (args.gan_epochs):
