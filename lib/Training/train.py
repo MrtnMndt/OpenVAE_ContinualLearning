@@ -1,6 +1,7 @@
 import time
 import torch
 import torch.nn as nn
+import copy
 from lib.Utility.metrics import AverageMeter
 from lib.Utility.metrics import accuracy
 
@@ -172,6 +173,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
     Real_losses = AverageMeter()
     Fake_losses = AverageMeter()
     Feature_losses = AverageMeter()
+    Feature_wise_losses = AverageMeter()
     losses = AverageMeter()
 
     batch_time = AverageMeter()
@@ -181,6 +183,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
 
     # switch to train mode
     model.train()
+    model.module.encoder.eval()
 
     end = time.time()
     wordvec=[]
@@ -235,15 +238,23 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
         v,b,c,x,y = recon_samples.shape
         recon_samples= recon_samples.view(v*b,c,x,y)
         feature_loss = 0
-        if args.encoder_dist:
+        feature_wise_loss = 0 
+        if args.encoder_dist or args.feature_wise_loss:
+            layer_input = copy.deepcopy(model.module.encoder_hooks)
             with torch.no_grad():
-                _, _, mu_fake, std_fake = model(inp)
-            feature_loss += nn.L1Loss()(mu_real,mu_fake)
+                _, _, mu_fake, std_fake = model(recon_samples)
+            if args.feature_wise_loss:
+                for name in layer_input.keys():
+                    feature_wise_loss += nn.MSELoss()(layer_input[name],model.module.encoder_hooks[name])
+                feature_wise_loss = 1e-6*feature_wise_loss
+                Feature_wise_losses.update(feature_wise_loss.item())
+            if args.encoder_dist:
+                feature_loss += nn.L1Loss()(mu_real,mu_fake)
+                Feature_losses.update(feature_loss.item())
         D_fake = model.module.discriminator(recon_samples)
         recon_loss = 10*nn.L1Loss()(recon_samples,inp)
         G_fake_loss = -torch.mean(D_fake)
-        G_loss =  G_fake_loss + recon_loss + feature_loss
-        Feature_losses.update(feature_loss.item())
+        G_loss =  G_fake_loss + recon_loss + feature_loss + feature_wise_loss
         Gen_losses.update(G_loss.item())
         Fake_losses.update((D_fake_loss+G_fake_loss).item())
 
@@ -293,6 +304,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
     writer.add_scalar('training/train_generator_loss', Gen_losses.avg, epoch)
     writer.add_scalar('training/train_discriminator_loss', Dis_losses.avg, epoch)
     writer.add_scalar('training/train_feature_loss', Feature_losses.avg, epoch)
+    writer.add_scalar('training/train_feature_wise_loss', Feature_wise_losses.avg, epoch)
     writer.add_scalar('training/train_fake_loss', Fake_losses.avg, epoch)
     writer.add_scalar('training/train_real_loss', Real_losses.avg, epoch)
 

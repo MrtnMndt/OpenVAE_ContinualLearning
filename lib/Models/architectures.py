@@ -1,6 +1,8 @@
 from collections import OrderedDict
+import re
 import torch
 import torch.nn as nn
+
 
 
 def grow_classifier(device, classifier, class_increment, weight_initializer):
@@ -391,6 +393,18 @@ class WRN(nn.Module):
             ('encoder_act1', nn.ReLU(inplace=True))
         ]))
 
+        if args.feature_wise_loss:
+            self.encoder_hooks = {}
+            def get_activation(name):
+                def hook(model, input, output):
+                    self.encoder_hooks[name] = output.detach()
+                return hook
+            print("encoder hook: ")
+            for name, module in self.encoder.named_modules():
+                if '.' not in name and 'act' not in name and 'bn' not in name and len(name)>1:
+                    print(name)
+                    module.register_forward_hook(get_activation(name))
+
         self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y = get_feat_size(self.encoder, self.patch_size,
                                                                                           self.num_colors)
         self.latent_mu = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_x * self.enc_channels,
@@ -417,6 +431,17 @@ class WRN(nn.Module):
             ('decoder_conv1', nn.Conv2d(self.nChannels[0], self.out_channels, kernel_size=3, stride=1, padding=1,
                                         bias=False))
         ]))
+        # if args.feature_wise_loss:
+        #     self.decoder_hooks = {}
+        #     def get_activation(name):
+        #         def hook(model, input, output):
+        #             self.decoder_hooks[name] = output.detach()
+        #         return hook
+        #     print("decoder hook: ")
+        #     for name, module in self.decoder.named_modules():
+        #         if '.' not in name and len(name)>1:
+        #             print(name)
+        #             module.register_forward_hook(get_activation(name))
 
     def encode(self, x):
         x = self.encoder(x)

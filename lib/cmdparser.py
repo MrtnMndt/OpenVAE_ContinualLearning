@@ -113,6 +113,7 @@ parser.add_argument("--distill-wordvec", action="store_true")
 
 # WGAN-GP
 parser.add_argument('--gan', action = 'store_true', help ='train generator as gan fashion')
+parser.add_argument('--feature-wise-loss', action = "store_true")
 parser.add_argument('--gan-epochs', default=120, type=int, help='number of total epochs to run')
 parser.add_argument('-lrG', '--learning-rate-G', default=2e-4, type=float)
 parser.add_argument('-lrD', '--learning-rate-D', default=2e-4, type=float)

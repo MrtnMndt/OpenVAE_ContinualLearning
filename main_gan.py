@@ -77,9 +77,113 @@ def main():
 
     # we set an epoch multiplier to 1 for isolated training and increase it proportional to amount of tasks in CL
     epoch_multiplier = 1
-    # add command line options to TensorBoard
-    args_to_tensorboard(writer, args)
-    temp_embedding = []
+    if args.incremental_data:
+        from lib.Datasets.incremental_dataset import get_incremental_dataset
+
+        # get the method to create the incremental dataste (inherits from the chosen data loader)
+        inc_dataset_init_method = get_incremental_dataset(data_init_method, args)
+
+        # different options for class incremental vs. cross-dataset experiments
+        if args.cross_dataset:
+            # if a task order file is specified, load the task order from it
+            if args.load_task_order:
+                # check if file exists and if file ends with extension '.txt'
+                if os.path.isfile(args.load_task_order) and len(args.load_task_order) >= 4\
+                        and args.load_task_order[-4:] == '.txt':
+                    print("=> loading task order from '{}'".format(args.load_task_order))
+                    with open(args.load_task_order, 'rb') as fp:
+                        task_order = pickle.load(fp)
+                # if no file is found default to cmd line task order
+                else:
+                    # parse and split string at commas
+                    task_order = args.dataset_order.split(',')
+                    for i in range(len(task_order)):
+                        # remove blank spaces in dataset names
+                        task_order[i] = task_order[i].replace(" ", "")
+            # use task order as specified in command line
+            else:
+                # parse and split string at commas
+                task_order = args.dataset_order.split(',')
+                for i in range(len(task_order)):
+                    # remove blank spaces in dataset names
+                    task_order[i] = task_order[i].replace(" ", "")
+
+            # just for getting the number of classes in the first dataset
+            num_classes = 0
+            for i in range(args.num_base_tasks):
+                temp_dataset_init_method = getattr(datasets, task_order[i])
+                temp_dataset = temp_dataset_init_method(torch.cuda.is_available(), args)
+                num_classes += temp_dataset.num_classes
+                del temp_dataset
+
+            # multiply epochs by number of tasks
+            if args.num_increment_tasks:
+                epoch_multiplier = ((len(task_order) - args.num_base_tasks) / args.num_increment_tasks) + 1
+            else:
+                # this branch will get active if num_increment_tasks is set to zero. This is useful when training
+                # any isolated upper bound with all datasets present from the start.
+                epoch_multiplier = 1.0
+        else:
+            # class incremental
+            # if specified load task order from file
+            if args.load_task_order:
+                if os.path.isfile(args.load_task_order):
+                    print("=> loading task order from '{}'".format(args.load_task_order))
+                    task_order = np.load(args.load_task_order).tolist()
+                else:
+                    # if no file is found a random task order is created
+                    print("=> no task order found. Creating randomized task order")
+                    task_order = np.random.permutation(num_classes).tolist()
+            else:
+                # if randomize task order is specified create a random task order, else task order is sequential
+                task_order = []
+                for i in range(dataset.num_classes):
+                    task_order.append(i)
+
+                if args.randomize_task_order:
+                    task_order = np.random.permutation(num_classes).tolist()
+
+            # save the task order
+            np.save(os.path.join(save_path, 'task_order.npy'), task_order)
+            # set the number of classes to base tasks + 1 because base tasks is always one less.
+            # E.g. if you have 2 classes it's one task. This is a little inconsistent from the naming point of view
+            # but we wanted a single variable to work for both class incremental as well as cross-dataset experiments
+            num_classes = args.num_base_tasks + 1
+            # multiply epochs by number of tasks
+            epoch_multiplier = ((len(task_order) - (args.num_base_tasks + 1)) / args.num_increment_tasks) + 1
+
+        print("Task order: ", task_order)
+        temp_embedding = []
+        if args.wordvec:
+            for cls_num in task_order:
+                cls_name = list(dataset.class_to_idx.keys())[list(dataset.class_to_idx.values()).index(cls_num)]
+                temp_embedding.append(dataset.wordvec[cls_name])             
+            # dataset.wordvec = temp_embedding
+        # log the task order into the text file
+        log.write('task_order:' + str(task_order) + '\n')
+        args.task_order = task_order
+
+        # this is a little weird, but it needs to be here because the below method pops items from task_order
+        args_to_tensorboard(writer, args)
+
+        assert epoch_multiplier.is_integer(), print("uneven task division, make sure number of tasks are integers.")
+
+        # Get the incremental dataset
+        dataset = inc_dataset_init_method(torch.cuda.is_available(), device, task_order, args)
+        if args.wordvec:
+            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
+            dataset.wordvec = np.asarray(temp_embedding)
+    else:
+        # add command line options to TensorBoard
+        args_to_tensorboard(writer, args)
+        temp_embedding = []
+        if args.wordvec:
+            for cls_num in range(dataset.num_classes):
+                cls_name = list(dataset.class_to_idx.keys())[cls_num]
+                temp_embedding.append(dataset.wordvec[cls_name])
+            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
+            dataset.wordvec = np.asarray(temp_embedding)
+
     log.close()
 
     # Get a sample input from the data loader to infer color channels/size
@@ -104,7 +208,6 @@ def main():
         model.discriminator = Gan_Model(device, num_classes, num_colors, args)
 
     # Parallel container for multi GPU use and cast to available device
-    # model = torch.nn.DataParallel(model).to(device)
     print(model)
 
     # Initialize the weights of the model, by default according to He et al.
@@ -141,54 +244,134 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-    else:
-        # global encoder training
-        while epoch < args.epochs:
-            # if epoch+2 == epoch%args.epochs:
-            #     print("debug perpose")
-            # visualize the latent space before each task increment and at the end of training if it is 2-D
-            if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
-                if model.module.latent_dim == 2:
-                    print("Calculating and visualizing dataset embedding")
-                    # infer the number of current tasks to plot the different classes in the embedding
-                    num_tasks = num_classes
+    # global encoder training
+    while epoch < args.epochs:
+        # if epoch+2 == epoch%args.epochs:
+        #     print("debug perpose")
+        # visualize the latent space before each task increment and at the end of training if it is 2-D
+        if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
+            if model.module.latent_dim == 2:
+                print("Calculating and visualizing dataset embedding")
+                # infer the number of current tasks to plot the different classes in the embedding
+                if args.incremental_data:
+                    if args.cross_dataset:
+                        num_tasks = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                    else:
+                        num_tasks = len(dataset.seen_tasks)
 
-                    zs = get_latent_embedding(model, dataset.train_loader, num_tasks, device)
-                    visualize_dataset_in_2d_embedding(writer, zs, args.dataset, save_path, task=num_tasks)
+                zs = get_latent_embedding(model, dataset.train_loader, num_tasks, device)
+                visualize_dataset_in_2d_embedding(writer, zs, args.dataset, save_path, task=num_tasks)
 
-            # train
-            train(dataset, model, criterion, epoch, optimizer['enc'], writer, device, args)
+        # continual learning specific part
+        if args.incremental_data:
+            # at the end of each task increment
+            if epoch % args.epochs == 0 and epoch > 0:
+                print('Saving the last checkpoint from the previous task ...')
+                save_task_checkpoint(save_path, epoch // args.epochs)
 
-            # evaluate on validation set
-            prec, loss = validate(dataset, model, criterion, epoch, writer, device, save_path, args)
+                print("Incrementing dataset ...")
+                dataset.increment_tasks(model, args.batch_size, args.workers, writer, save_path,
+                                        is_gpu=torch.cuda.is_available(),
+                                        upper_bound_baseline=args.train_incremental_upper_bound,
+                                        generative_replay=args.generative_replay,
+                                        openset_generative_replay=args.openset_generative_replay,
+                                        openset_threshold=args.openset_generative_replay_threshold,
+                                        openset_tailsize=args.openset_weibull_tailsize,
+                                        autoregression=args.autoregression)
 
-            # remember best prec@1 and save checkpoint
-            is_best = loss < best_loss
-            best_loss = min(loss, best_loss)
-            best_prec = max(prec, best_prec)
-            save_checkpoint({'epoch': epoch,
-                             'arch': args.architecture,
-                             'state_dict': model.state_dict(),
-                             'best_prec': best_prec,
-                             'best_loss': best_loss,
-                             'optimizer': optimizer['enc'].state_dict()},
-                            is_best, save_path)
+                # grow the classifier and increment the variable for number of overall classes so we can use it later
+                if args.cross_dataset:
+                    grow_classifier(device, model.module.classifier,
+                                    sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                                    - model.module.num_classes, WeightInitializer)
+                    model.module.num_classes = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                else:
+                    # model.module.num_classes = 100
+                    model.module.num_classes += args.num_increment_tasks
+                    grow_classifier(device, model.module.classifier, args.num_increment_tasks, WeightInitializer)
 
-            # increment epoch counters
-            epoch += 1
+                # reset moving averages etc. of the optimizer
+                optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+                # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
+
+            # change the number of seen classes
+            if epoch % args.epochs == 0:
+                model.module.seen_tasks = dataset.seen_tasks
+
+        # train
+        train(dataset, model, criterion, epoch, optimizer['enc'], writer, device, args)
+
+        # evaluate on validation set
+        prec, loss = validate(dataset, model, criterion, epoch, writer, device, save_path, args)
+
+        # remember best prec@1 and save checkpoint
+        is_best = loss < best_loss
+        best_loss = min(loss, best_loss)
+        best_prec = max(prec, best_prec)
+        save_checkpoint({'epoch': epoch,
+                         'arch': args.architecture,
+                         'state_dict': model.state_dict(),
+                         'best_prec': best_prec,
+                         'best_loss': best_loss,
+                         'optimizer': optimizer['enc'].state_dict()},
+                        is_best, save_path)
+
+        # increment epoch counters
+        epoch += 1
 
     # Wgan-gp training
     epoch = 0
     best_prec = 0
     best_loss = random.getrandbits(128)
-    while epoch < (args.gan_epochs):
+    while epoch < (args.gan_epochs*epoch_multiplier):
         if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
             if model.module.latent_dim == 2:
                 print("Calculating and visualizing dataset embedding")
-                num_tasks = num_classes
+                # infer the number of current tasks to plot the different classes in the embedding
+                if args.incremental_data:
+                    if args.cross_dataset:
+                        num_tasks = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                    else:
+                        num_tasks = len(dataset.seen_tasks)
 
                 zs = get_latent_embedding(model, dataset.train_loader, num_tasks, device)
                 visualize_dataset_in_2d_embedding(writer, zs, args.dataset, save_path, task=num_tasks)
+
+        # continual learning specific part
+        if args.incremental_data:
+            # at the end of each task increment
+            if epoch % args.epochs == 0 and epoch > 0:
+                print('Saving the last checkpoint from the previous task ...')
+                save_task_checkpoint(save_path, epoch // args.epochs)
+
+                print("Incrementing dataset ...")
+                dataset.increment_tasks(model, args.batch_size, args.workers, writer, save_path,
+                                        is_gpu=torch.cuda.is_available(),
+                                        upper_bound_baseline=args.train_incremental_upper_bound,
+                                        generative_replay=args.generative_replay,
+                                        openset_generative_replay=args.openset_generative_replay,
+                                        openset_threshold=args.openset_generative_replay_threshold,
+                                        openset_tailsize=args.openset_weibull_tailsize,
+                                        autoregression=args.autoregression)
+
+                # grow the classifier and increment the variable for number of overall classes so we can use it later
+                if args.cross_dataset:
+                    grow_classifier(device, model.module.classifier,
+                                    sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                                    - model.module.num_classes, WeightInitializer)
+                    model.module.num_classes = sum(dataset.num_classes_per_task[:len(dataset.seen_tasks)])
+                else:
+                    # model.module.num_classes = 100
+                    model.module.num_classes += args.num_increment_tasks
+                    grow_classifier(device, model.module.classifier, args.num_increment_tasks, WeightInitializer)
+
+                # reset moving averages etc. of the optimizer
+                optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+                # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
+
+            # change the number of seen classes
+            if epoch % args.epochs == 0:
+                model.module.seen_tasks = dataset.seen_tasks
 
         # train
         train_gan(dataset, model, criterion, epoch, optimizer, writer, device, args)
