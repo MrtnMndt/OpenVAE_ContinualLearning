@@ -429,19 +429,9 @@ class WRN(nn.Module):
             ('decoder_bn1', nn.BatchNorm2d(self.nChannels[0], eps=self.batch_norm)),
             ('decoder_act1', nn.ReLU(inplace=True)),
             ('decoder_conv1', nn.Conv2d(self.nChannels[0], self.out_channels, kernel_size=3, stride=1, padding=1,
-                                        bias=False))
+                                        bias=False)),
+            ('decoder_act2', nn.Tanh()),
         ]))
-        # if args.feature_wise_loss:
-        #     self.decoder_hooks = {}
-        #     def get_activation(name):
-        #         def hook(model, input, output):
-        #             self.decoder_hooks[name] = output.detach()
-        #         return hook
-        #     print("decoder hook: ")
-        #     for name, module in self.decoder.named_modules():
-        #         if '.' not in name and len(name)>1:
-        #             print(name)
-        #             module.register_forward_hook(get_activation(name))
 
     def encode(self, x):
         x = self.encoder(x)
@@ -521,7 +511,7 @@ class BasicBlock(nn.Module):
         out = self.act2(out)
         return out
 
-class ResNet(nn.Module):
+class CIFAR_ResNet(nn.Module):
     def __init__(self, device, num_classes, num_colors, args):
         super(ResNet, self).__init__()
 

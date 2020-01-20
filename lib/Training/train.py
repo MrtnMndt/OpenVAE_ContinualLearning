@@ -214,7 +214,7 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
 
             class_samples, recon_samples, mu, std = model(inp)
             v,b,c,x,y = recon_samples.shape
-            recon_samples= recon_samples.view(v*b,c,x,y)
+            recon_samples = recon_samples.view(v*b,c,x,y)
             D_fake = model.module.discriminator(recon_samples)
             D_fake_loss = torch.mean(D_fake)
 
@@ -231,6 +231,9 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
             optimizer['gen'].zero_grad()
             D_loss.backward()
             optimizer['dis'].step()
+        # D_loss = 0
+        # D_real_loss = 0
+        # D_fake_loss = 0
 
         # if i % 5 ==0:
         #G
@@ -245,16 +248,17 @@ def train_gan(Dataset, model, criterion, epoch, optimizer, writer, device, args)
                 _, _, mu_fake, std_fake = model(recon_samples)
             if args.feature_wise_loss:
                 for name in layer_input.keys():
-                    feature_wise_loss += nn.MSELoss()(layer_input[name],model.module.encoder_hooks[name])
+                    feature_wise_loss += nn.MSELoss()(model.module.encoder_hooks[name],layer_input[name])
                 feature_wise_loss = 1e-6*feature_wise_loss
                 Feature_wise_losses.update(feature_wise_loss.item())
             if args.encoder_dist:
                 feature_loss += nn.L1Loss()(mu_real,mu_fake)
                 Feature_losses.update(feature_loss.item())
         D_fake = model.module.discriminator(recon_samples)
-        recon_loss = 10*nn.L1Loss()(recon_samples,inp)
+        recon_loss = nn.L1Loss()(recon_samples,inp)
         G_fake_loss = -torch.mean(D_fake)
-        G_loss =  G_fake_loss + recon_loss + feature_loss + feature_wise_loss
+        G_loss =  G_fake_loss + 0*recon_loss + feature_loss + feature_wise_loss
+        # G_loss =  feature_loss + feature_wise_loss
         Gen_losses.update(G_loss.item())
         Fake_losses.update((D_fake_loss+G_fake_loss).item())
 
