@@ -61,9 +61,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
     model.eval()
 
     end = time.time()
-    wordvec=[]
-    if args.wordvec:
-        wordvec = torch.from_numpy(Dataset.wordvec).float().to(device)
     # evaluate the entire validation dataset
     with torch.no_grad():
         for i, (inp, target) in enumerate(Dataset.val_loader):
@@ -88,11 +85,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 recon_samples = recon_samples_autoregression
 
             # compute loss
-            mu_c = None
-            if args.wordvec:
-                mu_c = model.module.word_embedding(wordvec[target])
-                wordvec_output = model.module.classifier(mu_c)
-            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, mu_c,
+            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, 
                                                          std, device, args)
 
             # For autoregressive models also update the bits per dimension value, converted from the obtained nats
@@ -108,14 +101,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             prec1 = accuracy(class_output, target)[0]
             top1.update(prec1.item(), inp.size(0))
             confusion.add(class_output.data, target)
-
-            if args.wordvec:
-                mu_c         = model.module.word_embedding(wordvec[:model.module.num_classes])
-                wordvec_output = mu.unsqueeze(1) - mu_c
-                wordvec_output = torch.norm(wordvec_output,p=2,dim=-1)
-                wordvec_output = -1* wordvec_output
-                w_prec1 = accuracy(wordvec_output, target)[0]
-                w_top1.update(w_prec1.item(), inp.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)

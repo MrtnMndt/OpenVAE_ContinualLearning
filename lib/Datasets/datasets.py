@@ -992,7 +992,8 @@ class CIFAR10:
                 ])
         else:
             train_transforms = transforms.Compose([
-                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
 
@@ -1174,25 +1175,6 @@ class CIFAR100:
                              'wolf': 97,
                              'woman': 98,
                              'worm': 99}
-        wordvec_path = 'datasets/CIFAR100/word2vec.npy'
-        if args.wordvec:
-            if os.path.exists(wordvec_path):
-                print("load pre-define")
-                self.wordvec = np.load(wordvec_path,allow_pickle=True).item()
-            else:
-                print("construction word_embedding")
-                ori_wordvec = 'datasets/CIFAR100/numberbatch-en-19.08.txt'
-                word_embedding = {}
-                with open(ori_wordvec) as f:
-                    for line in f:
-                        token_word = line.split()
-                        if token_word[0] in self.class_to_idx:
-                            word_embedding[token_word[0]]=list(map(float, token_word[1:]))
-                np.save(wordvec_path,word_embedding)
-                self.wordvec = word_embedding
-            assert len(self.wordvec.keys()) == 100, "word skipping"
-                
-                # self.wordvec = np.load()
 
     def __get_transforms(self, patch_size):
         if self.gray_scale:
@@ -1209,15 +1191,12 @@ class CIFAR100:
                 ])
         else:
             train_transforms = transforms.Compose([
-                transforms.Resize(size=(patch_size, patch_size)),
                 transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
                 transforms.RandomHorizontalFlip(),
-                # transforms.Resize(size=(patch_size, patch_size)),
                 transforms.ToTensor(),
             ])
 
             val_transforms = transforms.Compose([
-                transforms.Resize(size=(patch_size, patch_size)),
                 transforms.ToTensor(),
             ])
 
