@@ -1,7 +1,5 @@
 import time
 import torch
-import torch.nn as nn
-import copy
 from lib.Utility.metrics import AverageMeter
 from lib.Utility.metrics import accuracy
 
@@ -36,11 +34,11 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, args):
     model.train()
 
     end = time.time()
+
     # train
     for i, (inp, target) in enumerate(Dataset.train_loader):
         inp = inp.to(device)
         target = target.to(device)
-
 
         recon_target = inp
         class_target = target
@@ -72,12 +70,11 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, args):
         class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
                                                      device, args)
 
-        # add the individual loss components together and weight the KL term.
-        re_weight = 1
+        recon_weight=1
         if args.no_recon:
-            re_weight = 0 
-
-        loss = class_loss + re_weight * recon_loss + args.var_beta * kld_loss
+            recon_weight=0
+        # add the individual loss components together and weight the KL term.
+        loss = class_loss + recon_weight*recon_loss + args.var_beta * kld_loss
 
         # take mean to compute accuracy. Note if variational samples are 1 this only gets rid of a dummy dimension.
         output = torch.mean(class_samples, dim=0)

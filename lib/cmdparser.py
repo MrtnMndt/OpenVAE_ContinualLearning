@@ -105,11 +105,8 @@ parser.add_argument('--pixel-cnn-kernel-size', default=7, type=int, help='PixelC
 # Debug
 parser.add_argument('--debug','-d',action = 'store_true', help = 'pdb enable')
 
-# Word2vec Prior
-parser.add_argument("--wordvec", action = 'store_true', help='use word2vec as prior')
+# No Recon
 parser.add_argument("--no-recon", action = 'store_true', help='no recon loss')
-parser.add_argument("--wordvec-dim", default=300, type=int, help='word2vec dim size')
-parser.add_argument("--distill-wordvec", action="store_true")
 
 # WGAN-GP
 parser.add_argument('--gan', action = 'store_true', help ='train generator as gan fashion')

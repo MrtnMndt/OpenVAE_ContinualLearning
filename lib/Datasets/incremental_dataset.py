@@ -2,13 +2,13 @@ import math
 import os
 import torchvision
 import torch.utils.data
-import torchvision.transforms as transforms
 from tqdm import tqdm
 from tqdm import trange
 import lib.OpenSet.meta_recognition as mr
 from lib.Training.evaluate import sample_per_class_zs
 import lib.Datasets.datasets as all_datasets
 from lib.Training.evaluate import eval_dataset
+
 
 def get_incremental_dataset(parent_class, args):
     """

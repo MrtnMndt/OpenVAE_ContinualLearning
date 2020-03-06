@@ -170,11 +170,6 @@ def main():
 
         print("Task order: ", task_order)
         temp_embedding = []
-        if args.wordvec:
-            for cls_num in task_order:
-                cls_name = list(dataset.class_to_idx.keys())[list(dataset.class_to_idx.values()).index(cls_num)]
-                temp_embedding.append(dataset.wordvec[cls_name])             
-            # dataset.wordvec = temp_embedding
         # log the task order into the text file
         log.write('task_order:' + str(task_order) + '\n')
         args.task_order = task_order
@@ -186,19 +181,9 @@ def main():
 
         # Get the incremental dataset
         dataset = inc_dataset_init_method(torch.cuda.is_available(), device, task_order, args)
-        if args.wordvec:
-            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
-            dataset.wordvec = np.asarray(temp_embedding)
     else:
         # add command line options to TensorBoard
         args_to_tensorboard(writer, args)
-        temp_embedding = []
-        if args.wordvec:
-            for cls_num in range(dataset.num_classes):
-                cls_name = list(dataset.class_to_idx.keys())[cls_num]
-                temp_embedding.append(dataset.wordvec[cls_name])
-            dataset.wordvec_dict = copy.deepcopy(dataset.wordvec)
-            dataset.wordvec = np.asarray(temp_embedding)
 
     log.close()
 
@@ -236,7 +221,12 @@ def main():
     WeightInitializer.init_model(model)
 
     # Define optimizer and loss function (criterion)
+    milestones_list = [100,150]
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list, gamma=0.5)
+    # milestones_list = [100, 150, 200, 250]
+    # optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, momentum=0.9, weight_decay=2e-4)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list)
 
     epoch = 0
     best_prec = 0
@@ -307,6 +297,7 @@ def main():
 
                 # reset moving averages etc. of the optimizer
                 optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+                scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list+epoch, gamma=0.5)
                 # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum = 0.9, weight_decay = 0.00001)
 
             # change the number of seen classes
@@ -333,6 +324,7 @@ def main():
 
         # increment epoch counters
         epoch += 1
+        scheduler.step()
 
         # if a new task begins reset the best prec so that new best model can be stored.
         if args.incremental_data and epoch % args.epochs == 0:

@@ -52,7 +52,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
     batch_time = AverageMeter()
     top1 = AverageMeter()
-    w_top1 = AverageMeter()
 
     # confusion matrix
     confusion = ConfusionMeter(model.module.num_classes, normalized=True)
@@ -61,6 +60,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
     model.eval()
 
     end = time.time()
+
     # evaluate the entire validation dataset
     with torch.no_grad():
         for i, (inp, target) in enumerate(Dataset.val_loader):
@@ -85,7 +85,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 recon_samples = recon_samples_autoregression
 
             # compute loss
-            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, 
+            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu,
                                                          std, device, args)
 
             # For autoregressive models also update the bits per dimension value, converted from the obtained nats
@@ -94,7 +94,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
             # take mean to compute accuracy
             # (does nothing if there isn't more than 1 sample per input other than removing dummy dimension)
-            class_output = torch.mean(class_samples, dim=0) #
+            class_output = torch.mean(class_samples, dim=0)
             recon_output = torch.mean(recon_samples, dim=0)
 
             # measure accuracy, record loss, fill confusion matrix
@@ -126,8 +126,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 recon_loss = F.binary_cross_entropy(recon, recon_target)
             else:
                 # If not autoregressive simply apply the Sigmoid and visualize
-                # recon = torch.sigmoid(recon_output)
-                recon = recon_output
+                recon = torch.sigmoid(recon_output)
                 if (i == (len(Dataset.val_loader) - 2)) and (epoch % args.visualization_epoch == 0):
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
@@ -176,7 +175,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             # If we are at the end of validation, create one mini-batch of example generations. Only do this every
             # other epoch specified by visualization_epoch to avoid generation of lots of images and computationally
             # expensive calculations of the autoregressive model's generation.
-            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0 and args.no_recon==False:
+            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0:
                 # generation
                 gen = model.module.generate()
 
@@ -198,7 +197,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
     # TensorBoard summary logging
     writer.add_scalar('validation/val_precision@1', top1.avg, epoch)
-    writer.add_scalar('validation/val_w_precision@1', w_top1.avg, epoch)
     writer.add_scalar('validation/val_average_loss', losses.avg, epoch)
     writer.add_scalar('validation/val_class_loss', class_losses.avg, epoch)
     writer.add_scalar('validation/val_recon_loss_nat', recon_losses_nat.avg, epoch)
