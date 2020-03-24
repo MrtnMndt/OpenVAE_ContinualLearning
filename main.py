@@ -20,7 +20,7 @@ import torch.backends.cudnn as cudnn
 # Custom library
 import lib.Models.architectures as architectures
 from lib.Models.pixelcnn import PixelCNN
-from lib.Models.gan import Gan_Model
+# from lib.Models.gan import Gan_Model
 import lib.Datasets.datasets as datasets
 from lib.Models.initialization import WeightInit
 from lib.Models.architectures import grow_classifier
@@ -37,7 +37,7 @@ from lib.Utility.visualization import visualize_dataset_in_2d_embedding
 # Comment this if CUDNN benchmarking is not desired
 cudnn.benchmark = True
 
-
+#CUDA_VISIBLE_DEVICES=0 python main.py --dataset CIFAR100 -j 6 -p 32 -b 512 -a CIFAR_ResNet --wrn-depth 20 -noise 0 --gan --visualization-epoch 2 -lr 0.0002 --num-dis-feature 64 --var-latent-dim 128
 def main():
     # Command line options
     args = parser.parse_args()
@@ -62,6 +62,8 @@ def main():
     # add option specific naming to separate tensorboard log files later
     if args.autoregression:
         save_path += '_pixelcnn'
+    if args.gan:
+        save_path += 'gan'
 
     if args.incremental_data:
         save_path += '_incremental'
@@ -211,22 +213,25 @@ def main():
                                   num_layers=args.pixel_cnn_layers, k=args.pixel_cnn_kernel_size,
                                   padding=args.pixel_cnn_kernel_size//2)
 
-    # Parallel container for multi GPU use and cast to available device
-    model = torch.nn.DataParallel(model).to(device)
-    print(model)
-
     # Initialize the weights of the model, by default according to He et al.
     print("Initializing network with: " + args.weight_init)
     WeightInitializer = WeightInit(args.weight_init)
     WeightInitializer.init_model(model)
 
     # Define optimizer and loss function (criterion)
-    milestones_list = [100,150]
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list, gamma=0.5)
-    # milestones_list = [100, 150, 200, 250]
-    # optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, momentum=0.9, weight_decay=2e-4)
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list)
+    # milestones_list = [100,150]
+    # optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list, gamma=0.5)
+    optimizer = {}
+    optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
+                                        , args.learning_rate)
+    optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
+                                        , args.learning_rate)
+    optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.learning_rate)
+
+    # Parallel container for multi GPU use and cast to available device
+    model = torch.nn.DataParallel(model).to(device)
+    print(model)
 
     epoch = 0
     best_prec = 0
@@ -241,7 +246,7 @@ def main():
             best_prec = checkpoint['best_prec']
             best_loss = checkpoint['best_loss']
             model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            # optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
@@ -305,7 +310,7 @@ def main():
                 model.module.seen_tasks = dataset.seen_tasks
 
         # train
-        train(dataset, model, criterion, epoch, optimizer, writer, device, args)
+        train(dataset, model, criterion, epoch, optimizer, writer, device, save_path, args)
 
         # evaluate on validation set
         prec, loss = validate(dataset, model, criterion, epoch, writer, device, save_path, args)
@@ -318,13 +323,13 @@ def main():
                          'arch': args.architecture,
                          'state_dict': model.state_dict(),
                          'best_prec': best_prec,
-                         'best_loss': best_loss,
-                         'optimizer': optimizer.state_dict()},
+                         'best_loss': best_loss,},
+                         # 'optimizer': optimizer.state_dict()},
                         is_best, save_path)
 
         # increment epoch counters
         epoch += 1
-        scheduler.step()
+        # scheduler.step()
 
         # if a new task begins reset the best prec so that new best model can be stored.
         if args.incremental_data and epoch % args.epochs == 0:

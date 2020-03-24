@@ -126,8 +126,10 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 recon_loss = F.binary_cross_entropy(recon, recon_target)
             else:
                 # If not autoregressive simply apply the Sigmoid and visualize
-                recon = torch.sigmoid(recon_output)
+                # recon = torch.sigmoid(recon_output)
+                recon = recon_output
                 if (i == (len(Dataset.val_loader) - 2)) and (epoch % args.visualization_epoch == 0):
+                    visualize_image_grid(inp, writer, epoch + 1, 'input_snapshot', save_path)
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
             # update the respective loss values. To be consistent with values reported in the literature we scale

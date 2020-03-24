@@ -83,7 +83,8 @@ class MNIST:
             ])
         else:
             train_transforms = transforms.Compose([
-                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
             ])

@@ -110,11 +110,7 @@ parser.add_argument("--no-recon", action = 'store_true', help='no recon loss')
 
 # WGAN-GP
 parser.add_argument('--gan', action = 'store_true', help ='train generator as gan fashion')
+parser.add_argument('--num-dis-feature', default=32, type=int, help='number of total epochs to run')
 parser.add_argument('--feature-wise-loss', action = "store_true")
 parser.add_argument('--gan-epochs', default=120, type=int, help='number of total epochs to run')
-parser.add_argument('-lrG', '--learning-rate-G', default=2e-4, type=float)
-parser.add_argument('-lrD', '--learning-rate-D', default=2e-4, type=float)
-parser.add_argument('-rg','--ratio-G', default=1, type=int)
-parser.add_argument('-rd','--ratio-D', default=2, type=int)
-parser.add_argument('--lambda-gp', default = 10, type =float, help ='penalty')
 parser.add_argument('--encoder-dist', action='store_true', help ='feature_distance loss')
