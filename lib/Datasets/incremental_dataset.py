@@ -8,7 +8,26 @@ import lib.OpenSet.meta_recognition as mr
 from lib.Training.evaluate import sample_per_class_zs
 import lib.Datasets.datasets as all_datasets
 from lib.Training.evaluate import eval_dataset
+import torchvision.transforms as transforms
 
+class CustomTensorDataset(torch.utils.data.Dataset):
+    """ TensorDataset with support of transforms
+    """
+    def __init__(self, tensors, transform=None):
+        # assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
+        self.tensors = tensors
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x = self.tensors[index][0]
+        if self.transform:
+            x = self. transform(x)
+        y = self.tensors[index][1]
+
+        return x, y
+
+    def __len__(self):
+        return len(self.tensors)
 
 def get_incremental_dataset(parent_class, args):
     """
@@ -70,15 +89,37 @@ def get_incremental_dataset(parent_class, args):
 
             self.class_to_idx = {}
 
+            # Get the correspoding transformation due to TensorDataset
+            self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
             # Split the parent dataset class into into datasets per class
-            self.__get_incremental_datasets()
+            self.__get_incremental_datasets(self.train_transforms, self.val_transforms)
 
             # Get the corresponding class datasets for the initial datasets as specified by number and order
             self.trainset, self.valset = self.__get_initial_dataset()
             # Get the respective initial class data loaders
             self.train_loader, self.val_loader = self.get_dataset_loader(args.batch_size, args.workers, is_gpu)
 
-        def __get_incremental_datasets(self):
+        def __get_transforms(self, patch_size):
+            # optionally scale the images and repeat to three channels
+            # important note: these transforms will only be called once during the
+            # creation of the dataset and no longer in the incremental datasets that inherit.
+            # Adding data augmentation here is thus the wrong place!
+            train_transforms = transforms.Compose([
+                transforms.ToPILImage(mode = "RGB"),
+                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ])
+
+            val_transforms = transforms.Compose([
+                transforms.ToPILImage(mode = "RGB"),
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.ToTensor(),
+            ])
+
+            return train_transforms, val_transforms
+
+        def __get_incremental_datasets(self, train_transforms, val_transforms):
             """
             Splits the existing parent dataset into separate datasets per class. As our model's use a single-head
             growing classifier, also relabels the targets according to task sequence so the first encountered class
@@ -121,9 +162,11 @@ def get_incremental_dataset(parent_class, args):
                     targets_list[i] = torch.LongTensor(targets_list[i])
 
                     if j == 0:
-                        self.trainsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        train_tensor = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        self.trainsets[i] = CustomTensorDataset(train_tensor, train_transforms)
                     else:
-                        self.valsets[i] = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        val_tensor = torch.utils.data.TensorDataset(tensors_list[i], targets_list[i])
+                        self.valsets[i] = CustomTensorDataset(val_tensor, val_transforms)
 
         def __get_initial_dataset(self):
             """
@@ -424,6 +467,7 @@ def get_incremental_dataset(parent_class, args):
 
                         # return the new trainset.
                         trainset = torch.utils.data.TensorDataset(data, targets)
+                        trainset = CustomTensorDataset(trainset, self.train_transforms)
                         return trainset
 
             # If openset generative replay with outlier rejection has failed (e.g. rejection prior set to something
@@ -466,6 +510,7 @@ def get_incremental_dataset(parent_class, args):
 
             # return generated trainset
             trainset = torch.utils.data.TensorDataset(data, targets)
+            trainset = CustomTensorDataset(trainset, self.train_transforms)
             return trainset
 
     class CrossDataset:

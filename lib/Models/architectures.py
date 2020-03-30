@@ -608,12 +608,12 @@ class CIFAR_ResNet(nn.Module):
             ('decoder_block1', self._make_layer(CIFAR_ResNetworkBlock, stack=2, is_transposed=True)),
             ('decoder_block2', self._make_layer(CIFAR_ResNetworkBlock, stack=1, is_transposed=True)),
             ('decoder_block3', self._make_layer(CIFAR_ResNetworkBlock, stack=0, is_transposed=True)),
-            ('decoder_block4', CIFAR_ResBasickBlock(in_planes=self.nChannels[0], planes=num_colors, is_transposed=True)),
+            ('decoder_block4', CIFAR_ResBasickBlock(in_planes=self.nChannels[0], planes=self.out_channels, is_transposed=True)),
             # ('decoder_act1', nn.Tanh()),
             ]))
 
         from .gan import Discriminator
-        self.discriminator = Discriminator(self.num_colors, self.num_classes ,self.nChannels, args)
+        self.discriminator = Discriminator(self.out_channels, self.num_classes ,self.nChannels, args)
         # self.discriminator = nn.Sequential(OrderedDict([
         #     ('dis_block1', nn.Linear(self.latent_dim, 1)),
         #     ('dis_act', nn.Sigmoid())
@@ -692,3 +692,150 @@ class CIFAR_ResNet(nn.Module):
         x = self.discriminator(x, y)
         return x 
 
+class CIFAR_ResNet_proj(nn.Module):
+    def __init__(self, device, num_classes, num_colors, args):
+        super(CIFAR_ResNet_proj, self).__init__()
+
+        self.depth = args.wrn_depth
+        self.batch_norm = args.batch_norm
+        self.patch_size = args.patch_size
+        self.batch_size = args.batch_size
+        self.num_colors = num_colors
+        self.num_classes = num_classes
+        self.device = device
+        self.out_channels = args.out_channels
+
+        self.seen_tasks = []
+
+        self.num_samples = args.var_samples
+        self.latent_dim = args.var_latent_dim
+
+        self.nChannels = [16,16,32,64]
+
+        assert (self.depth-2)%6 == 0
+        self.num_block_layers = int((self.depth-2)/6)
+
+        self.encoder = nn.Sequential(OrderedDict([
+            ('encoder_block1', CIFAR_ResBasickBlock(in_planes=num_colors)),
+            ('encoder_block2', self._make_layer(CIFAR_ResNetworkBlock, stack=0)),
+            ('encoder_block3', self._make_layer(CIFAR_ResNetworkBlock, stack=1)),
+            ('encoder_block4', self._make_layer(CIFAR_ResNetworkBlock, stack=2)),
+            ('encoder_avgpool1', nn.AvgPool2d(8)),
+            ]))
+
+        if args.feature_wise_loss:
+            self.encoder_hooks = {}
+            def get_activation(name):
+                def hook(model, input, output):
+                    self.encoder_hooks[name] = output.detach()
+                return hook
+            print("encoder hook: ")
+            for name, module in self.encoder.named_modules():
+                if '.' not in name and 'act' not in name and 'bn' not in name and len(name)>1:
+                    print(name)
+                    module.register_forward_hook(get_activation(name))
+
+        self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y = get_feat_size(self.encoder, self.patch_size,
+                                                                                          self.num_colors)
+        self.latent_mu = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_x * self.enc_channels,
+                                   self.latent_dim, bias=False)
+        self.latent_std = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_y * self.enc_channels,
+                                    self.latent_dim, bias=False)
+
+        self.classifier = nn.Sequential(nn.Linear(self.latent_dim, num_classes, bias=False))
+
+        self.latent_decoder = nn.Linear(self.latent_dim, self.enc_channels*4*4*8, bias=False)
+        
+        self.decoder = nn.Sequential(OrderedDict([
+            # ('decoder_uplatent', nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_y *
+            #                             self.enc_channels, self.enc_channels*4*4*8)), # 64,4,4,8
+            ('decoder_block1', CIFAR_ResNetworkBlock(self.enc_channels*8, self.enc_channels*4, res_block=0, stack=1, is_transposed=True)), # 32,8,8,4
+            ('decoder_block2', CIFAR_ResNetworkBlock(self.enc_channels*4, self.enc_channels*2, res_block=0, stack=1, is_transposed=True)),# 16,16,16,2
+            ('decoder_block3', CIFAR_ResNetworkBlock(self.enc_channels*2, self.enc_channels, res_block=0, stack=1, is_transposed=True)),# 8,32,32,1
+            ('decoder_bn1',nn.BatchNorm2d(self.enc_channels)),
+            ('decoder_act1',nn.ReLU()),
+            ('decoder_conv_img',nn.Conv2d(self.enc_channels,3,1,1)),
+            ('decoder_act2', nn.Tanh()),
+            ]))
+
+        from .gan import Discriminator
+        self.discriminator = Discriminator(self.num_colors, self.num_classes ,self.nChannels, args)
+        # self.discriminator = nn.Sequential(OrderedDict([
+        #     ('dis_block1', nn.Linear(self.latent_dim, 1)),
+        #     ('dis_act', nn.Sigmoid())
+        #     ]))
+        # self.discriminator_emb = nn.Embedding(self.num_classes, self.latent_dim)
+
+    def _make_layer(self, block, stack, is_transposed=False):
+        layers = []
+        if is_transposed:
+            in_planes = self.nChannels[stack+1]
+            planes = self.nChannels[stack]
+            # planes = in_planes
+        else:
+            in_planes = self.nChannels[stack]
+            planes = self.nChannels[stack+1]
+
+        for res_block in range(self.num_block_layers):
+            # if is_transposed and res_block+1 == self.num_block_layers:
+            #     planes = self.nChannels[stack]
+            layers.append(block(in_planes, planes, res_block, stack, is_transposed))
+            in_planes = planes
+                
+
+        return nn.Sequential(*layers)
+
+    def encode(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        z_mean = self.latent_mu(x)
+        z_std = self.latent_std(x)
+        return z_mean, z_std
+
+    def reparameterize(self, mu, std):
+        eps = std.data.new(std.size()).normal_()
+        return eps.mul(std).add(mu)
+
+    def decode(self, z):
+        z = self.latent_decoder(z)
+        # z = z.view(z.size(0), self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y)
+        z = z.view(z.size(0), self.enc_channels*8, 4, 4)
+        x = self.decoder(z)
+        return x
+
+    def generate(self, z = None):
+        if z is None:
+            z = torch.randn(self.batch_size, self.latent_dim).to(self.device)
+        x = self.decode(z)
+        # x = torch.Tanh(x)
+        # x = torch.sigmoid(x)
+        return x
+
+    def forward(self, x):
+        z_mean, z_std = self.encode(x)
+        output_samples = torch.zeros(self.num_samples, x.size(0), self.out_channels, self.patch_size,
+                                     self.patch_size).to(self.device)
+        classification_samples = torch.zeros(self.num_samples, x.size(0), self.num_classes).to(self.device)
+        for i in range(self.num_samples):
+            z = self.reparameterize(z_mean, z_std)
+            # print("Decoder")
+            output_samples[i] = self.decode(z)
+            classification_samples[i] = self.classifier(z)
+        return classification_samples, output_samples, z_mean, z_std
+
+    def forward_G(self, mu, std):
+        z = self.reparameterize(mu, std)
+        output_samples = self.decode(z)
+        return output_samples, z
+
+    def forward_E(self, x):
+        z_mean, z_std = self.encode(x)
+        classification_samples = torch.zeros(self.num_samples, x.size(0), self.num_classes).to(self.device)
+        for i in range(self.num_samples):
+            z = self.reparameterize(z_mean, z_std)
+            classification_samples[i] = self.classifier(z)
+        return classification_samples, z_mean, z_std
+
+    def forward_D(self, x, y=None):
+        x = self.discriminator(x, y)
+        return x 

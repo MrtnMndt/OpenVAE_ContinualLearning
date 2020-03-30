@@ -63,6 +63,7 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, save_path
         # pred_label = torch.argmax(class_samples, dim=-1).squeeze()
         # mu_label = pred_label.to(device)
         mu_label = mu.detach()
+        # mu_label = None
 
         n,b,c,x,y = recon_samples.shape
         fake_z = model.module.forward_D((recon_samples.view(n*b,c,x,y)).detach(), mu_label)
@@ -83,7 +84,7 @@ def train(Dataset, model, criterion, epoch, optimizer, writer, device, save_path
         class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
                                                      device, args)
         # add the individual loss components together and weight the KL term.
-        loss = class_loss + recon_loss + args.var_beta * kld_loss
+        loss = class_loss + 100*recon_loss + args.var_beta * kld_loss
 
         output = torch.mean(class_samples, dim=0)
         # record precision/accuracy and losses
