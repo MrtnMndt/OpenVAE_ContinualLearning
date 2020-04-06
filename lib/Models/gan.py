@@ -88,22 +88,22 @@ class Discriminator(nn.Module):
         nFeatures = args.num_dis_feature
         self.nChannels = [nFeatures, nFeatures*2, nFeatures*4, nFeatures*8, nFeatures*16]
         self.block1 = OptimizedBlock(3, self.nChannels[0])
-        self.block2 = Block(self.nChannels[0], self.nChannels[1],
+        self.block2 = Block(self.nChannels[0], self.nChannels[0],
                             activation=activation, downsample=True)
-        self.block3 = Block(self.nChannels[1], self.nChannels[2],
-                            activation=activation, downsample=True)
-        self.block4 = Block(self.nChannels[2], args.var_latent_dim,
-                            activation=activation, downsample=True)
+        self.block3 = Block(self.nChannels[0], self.nChannels[0],
+                            activation=activation, downsample=False)
+        self.block4 = Block(self.nChannels[0], args.var_latent_dim*16,
+                            activation=activation, downsample=False)
         # self.block4 = Block(self.nChannels[2], self.nChannels[3],
         #                     activation=activation, downsample=True)
         # self.block5 = Block(self.nChannels[3], self.nChannels[4],
         #                     activation=activation, downsample=True)
         # self.block6 = Block(self.nChannels[4], args.var_latent_dim,
         #                     activation=activation, downsample=True)
-        self.l7 = nn.utils.spectral_norm(nn.Linear(args.var_latent_dim, 1))
+        self.l7 = nn.utils.spectral_norm(nn.Linear(args.var_latent_dim*16, 1))
         if num_classes > 0:
             self.l_y = nn.utils.spectral_norm(
-                nn.Embedding(num_classes, args.var_latent_dim))
+                nn.Embedding(num_classes, args.var_latent_dim*16))
 
         self._initialize()
 

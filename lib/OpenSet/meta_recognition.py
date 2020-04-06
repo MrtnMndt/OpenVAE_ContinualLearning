@@ -122,6 +122,7 @@ def fit_weibull_models(distribution_values, tailsizes, num_max_fits=50):
                 return weibull_models, False
         else:
             weibull_models.append([])
+        # print (count)
 
     return weibull_models, True
 

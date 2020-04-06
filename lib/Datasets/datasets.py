@@ -1192,8 +1192,8 @@ class CIFAR100:
                 ])
         else:
             train_transforms = transforms.Compose([
-                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
-                transforms.RandomHorizontalFlip(),
+                # transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                # transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
 

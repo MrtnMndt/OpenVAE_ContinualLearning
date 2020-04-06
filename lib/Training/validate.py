@@ -2,6 +2,7 @@ import time
 import math
 import torch
 import torch.nn.functional as F
+import numpy as np
 from lib.Utility.metrics import AverageMeter
 from lib.Utility.metrics import ConfusionMeter
 from lib.Utility.metrics import accuracy
@@ -9,7 +10,7 @@ from lib.Utility.visualization import visualize_confusion
 from lib.Utility.visualization import visualize_image_grid
 
 
-def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
+def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, mu=None, std=None):
     """
     Evaluates/validates the model
 
@@ -166,13 +167,13 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                         if args.autoregression:
                             recon_losses_base_bits_per_dim.update(F.cross_entropy(rec, (rec_tar * 255).long()) *
                                                                   math.log2(math.e), 1)
-                        recon_losses_base_nat.update(F.binary_cross_entropy(recon[j], recon_target[j]), 1)
+                        recon_losses_base_nat.update(F.binary_cross_entropy_with_logits(recon[j], recon_target[j]), 1)
                     # if the input belongs to one of the new classes also update new metrics
                     elif class_target[j].item() in new_classes:
                         if args.autoregression:
                             recon_losses_new_bits_per_dim.update(F.cross_entropy(rec, (rec_tar * 255).long()) *
                                                                  math.log2(math.e), 1)
-                        recon_losses_new_nat.update(F.binary_cross_entropy(recon[j], recon_target[j]), 1)
+                        recon_losses_new_nat.update(F.binary_cross_entropy_with_logits(recon[j], recon_target[j]), 1)
 
             # If we are at the end of validation, create one mini-batch of example generations. Only do this every
             # other epoch specified by visualization_epoch to avoid generation of lots of images and computationally
@@ -183,6 +184,17 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
 
                 if args.autoregression:
                     gen = model.module.pixelcnn.generate(gen)
+                if args.gan:
+                    batch_size = target.size(0)
+                    class_len = Dataset.num_classes
+                    if args.incremental_data:
+                        class_len = len(Dataset.seen_tasks) 
+                    class_choice = np.random.choice(class_len, batch_size)
+                    class_choice = np.sort(class_choice)
+                    zs = torch.randn(batch_size, model.module.latent_dim*16).to(device)
+                    for b in range(batch_size):
+                        zs[b] = torch.normal(mu[class_choice[b]],std[class_choice[b]])
+                    gen = model.module.decode(zs)
                 visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
 
             # Print progress
