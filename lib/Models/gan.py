@@ -92,18 +92,19 @@ class Discriminator(nn.Module):
                             activation=activation, downsample=True)
         self.block3 = Block(self.nChannels[0], self.nChannels[0],
                             activation=activation, downsample=False)
-        self.block4 = Block(self.nChannels[0], args.var_latent_dim*16,
+        self.block4 = Block(self.nChannels[0], args.var_latent_dim,
                             activation=activation, downsample=False)
-        # self.block4 = Block(self.nChannels[2], self.nChannels[3],
-        #                     activation=activation, downsample=True)
+        # self.block5 = Block(self.nChannels[0], args.var_latent_dim,
+        #                     activation=activation, downsample=False)
         # self.block5 = Block(self.nChannels[3], self.nChannels[4],
         #                     activation=activation, downsample=True)
         # self.block6 = Block(self.nChannels[4], args.var_latent_dim,
         #                     activation=activation, downsample=True)
-        self.l7 = nn.utils.spectral_norm(nn.Linear(args.var_latent_dim*16, 1))
+        self.l7 = nn.utils.spectral_norm(nn.Linear(args.var_latent_dim, 1))
+        # self.l7 = nn.utils.spectral_norm(nn.Linear(self.nChannels[0], 1))
         if num_classes > 0:
             self.l_y = nn.utils.spectral_norm(
-                nn.Embedding(num_classes, args.var_latent_dim*16))
+                nn.Embedding(num_classes, args.var_latent_dim))
 
         self._initialize()
 
@@ -129,6 +130,14 @@ class Discriminator(nn.Module):
                 emb = y
             output += torch.sum(emb * h, dim=1, keepdim=True)
         return output
+
+    def gradient_penalty(self, y, x):
+        weight = torch.ones_like(y)
+        gradient = torch.autograd.grad(outputs=y, inputs=x, grad_outputs=weight, retain_graph=True, create_graph=True, only_inputs=True)[0]
+        gradient = gradient.view(gradient.size(0),-1)       
+        gradient = ((gradient.norm(2,1)-1) **2).mean()
+
+        return gradient
 
 
 

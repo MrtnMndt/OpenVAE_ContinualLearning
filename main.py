@@ -229,11 +229,12 @@ def main():
                                         , args.gan_learning_rate)
     optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.gan_learning_rate)
 
-    milestones_list = np.asarray([100])
+    # milestones_list = np.asarray([int(args.epochs/3),int(args.epochs*2/3)])
+    milestones_list = np.asarray([int(args.epochs/2)])
     scheduler = {}
-    scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list, gamma=0.5)
-    scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list, gamma=0.5)
-    scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list, gamma=0.5)
+    scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list, gamma=0.1)
+    scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list, gamma=0.1)
+    scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list, gamma=0.1)
 
     # Parallel container for multi GPU use and cast to available device
     model = torch.nn.DataParallel(model).to(device)
@@ -261,7 +262,7 @@ def main():
 
     # optimize until final amount of epochs is reached. Final amount of epochs is determined through the
     while epoch < (args.epochs * epoch_multiplier):
-        if epoch+2 == epoch%args.epochs:
+        if (epoch+2)%args.epochs == 0:
             print("debug perpose")
         # visualize the latent space before each task increment and at the end of training if it is 2-D
         if epoch % args.epochs == 0 and epoch > 0 or (epoch + 1) % (args.epochs * epoch_multiplier) == 0:
@@ -312,12 +313,12 @@ def main():
                 model = model.module
                 optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
                                         , args.learning_rate)
-                optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
-                                        , args.gan_learning_rate)
-                optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.gan_learning_rate)
-                scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list+epoch, gamma=0.5)
-                scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list+epoch, gamma=0.5)
-                scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list+epoch, gamma=0.5)
+                # optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
+                #                         , args.gan_learning_rate)
+                # optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.gan_learning_rate)
+                # scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list+epoch, gamma=0.1)
+                # scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list+epoch, gamma=0.1)
+                # scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list+epoch, gamma=0.1)
                 # Parallel container for multi GPU use and cast to available device
                 model = torch.nn.DataParallel(model).to(device)
 
@@ -347,10 +348,14 @@ def main():
 
         # increment epoch counters
         epoch += 1
-        if l1_weight < 10:
-            l1_weight = 10
-        else:
-            l1_weight -= 2
+        # if epoch % 10 == 0:
+        #     l1_weight-=1
+        #     if l1_weight < 0:
+        #         l1_weight = 0
+        # if l1_weight < 10:
+        #     l1_weight = 10
+        # else:
+        #     l1_weight -= 2
         scheduler['enc'].step()
         scheduler['dec'].step()
         scheduler['disc'].step()

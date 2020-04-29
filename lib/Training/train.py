@@ -186,6 +186,9 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
     data_time = AverageMeter()
     G_losses = AverageMeter()
     D_losses = AverageMeter()
+    D_losses_real = AverageMeter()
+    D_losses_fake = AverageMeter()
+    G_losses_fake = AverageMeter()
     fake_class_losses = AverageMeter()
 
     top1 = AverageMeter()
@@ -215,34 +218,40 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
 
         # Model explanation: Conventionally GAN architecutre update D first and G
         class_samples, recon_samples, mu, std = model(inp)
-        # pred_label = torch.argmax(class_samples, dim=-1).squeeze()
-        # mu_label = pred_label.to(device)
-        mu_label = mu.detach()
-        # mu_label = None
-
-        # OCDVAE calculate loss
-        class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
-                                                     device, args)
-        # add the individual loss components together and weight the KL term.
-        loss = class_loss + l1_weight*recon_loss + args.var_beta * kld_loss
-
-        output = torch.mean(class_samples, dim=0)
-        # record precision/accuracy and losses
-        prec1 = accuracy(output, target)[0]
-        top1.update(prec1.item(), inp.size(0))
-        losses.update((class_loss + recon_loss + kld_loss).item(), inp.size(0))
-        class_losses.update(class_loss.item(), inp.size(0))
-        recon_losses.update(recon_loss.item(), inp.size(0))
-        kld_losses.update(kld_loss.item(), inp.size(0))
-
+        mu_label = None
+        if args.proj_gan:
+            # pred_label = torch.argmax(class_samples, dim=-1).squeeze()
+            # mu_label = pred_label.to(device)
+            mu_label = target
+        # mu_label = mu.detach()
+        
         #### G Update####
-        if i % 1 == 0:
+        if i % 5 == 0:
+
+            # OCDVAE calculate loss
+            class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
+                                                         device, args)
+            # add the individual loss components together and weight the KL term.
+            recon_loss = l1_weight*recon_loss
+            kld_loss = args.var_beta * kld_loss
+            loss = class_loss + recon_loss + kld_loss
+
+            output = torch.mean(class_samples, dim=0)
+            # record precision/accuracy and losses
+            prec1 = accuracy(output, target)[0]
+            top1.update(prec1.item(), inp.size(0))
+            # losses.update((class_loss + recon_loss + kld_loss).item(), inp.size(0))
+            losses.update(loss.item(), inp.size(0))
+            class_losses.update(class_loss.item(), inp.size(0))
+            recon_losses.update(recon_loss.item(), inp.size(0))
+            kld_losses.update(kld_loss.item(), inp.size(0))
      
             # Needed to add GAN_criterion on KL
             n,b,c,x,y = recon_samples.shape
             fake_z = model.module.forward_D((recon_samples.view(n*b,c,x,y)), mu_label)
 
-            GAN_G_loss = GAN_criterion(fake_z, torch.ones_like(fake_z).float())
+            GAN_G_loss = -torch.mean(fake_z)
+            G_losses_fake.update(GAN_G_loss.item(), 1)
             G_losses.update(GAN_G_loss.item(), inp.size(0))
             GAN_G_loss += loss
 
@@ -253,10 +262,27 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             optimizer['enc'].step()
             optimizer['dec'].step()
 
+        #### D Update#### 
+        real_z = model.module.forward_D(recon_target, mu_label)
+        #D_loss_real = -torch.mean(real_z)
+        D_loss_real = torch.mean(torch.nn.functional.relu(1. - real_z))
+        D_losses_real.update(D_loss_real.item(), 1)
+
         n,b,c,x,y = recon_samples.shape
         fake_z = model.module.forward_D((recon_samples.view(n*b,c,x,y)).detach(), mu_label)
-        real_z = model.module.forward_D(inp, mu_label)
-        GAN_D_loss = GAN_criterion(real_z, torch.ones_like(real_z).float()) + GAN_criterion(fake_z, torch.zeros_like(fake_z).float())
+        # D_loss_fake = torch.mean(fake_z)
+        D_loss_fake = torch.mean(torch.nn.functional.relu(1. + fake_z))
+        D_losses_fake.update(D_loss_fake.item(), 1)
+
+        #compute gradient penalty
+        alpha = torch.rand(inp.size(0),1,1,1).to(device)
+        x_hat = (alpha*inp.data + (1-alpha)* (recon_samples.view(n*b,c,x,y)).data).requires_grad_(True)
+        grad_z = model.module.forward_D(x_hat)
+        D_loss_gp = model.module.discriminator.gradient_penalty(grad_z, x_hat)
+
+        # GAN_D_loss = args.g_weight *(GAN_criterion(real_z, torch.ones_like(real_z).float()) + GAN_criterion(fake_z, torch.zeros_like(fake_z).float()))
+        GAN_D_loss = D_loss_real + D_loss_fake + args.lambda_gp * D_loss_gp #WGAN_gp
+        # GAN_D_loss = D_loss_real + D_loss_fake # WGAN
         D_losses.update(GAN_D_loss.item(), inp.size(0))
 
         # compute gradient and do SGD step
@@ -300,6 +326,9 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
     writer.add_scalar('training/train_recon_loss', recon_losses.avg, epoch)
     writer.add_scalar('training/train_G_loss', G_losses.avg, epoch)
     writer.add_scalar('training/train_D_loss', D_losses.avg, epoch)
+    writer.add_scalar('training/train_D_loss_real', D_losses_real.avg, epoch)
+    writer.add_scalar('training/train_D_loss_fale', D_losses_fake.avg, epoch)
+    writer.add_scalar('training/train_G_loss_fake', G_losses_fake.avg, epoch)
 
     # If the log weights argument is specified also add parameter and gradient histograms to TensorBoard.
     if args.log_weights:
@@ -327,6 +356,6 @@ def class_distribution(Dataset, model, args, device):
             z_means[i] = torch.mean(dataset_train_dict["zs_correct"][i],dim=0)
             z_std[i] = torch.std(dataset_train_dict["zs_correct"][i],dim=0)
         else:
-            z_means[i] = torch.zeros(1,args.var_latent_dim)
-            z_std[i] = torch.zeros(1,args.var_latent_dim)
+            z_means[i] = torch.zeros(1,args.var_latent_dim).to(device)
+            z_std[i] = torch.zeros(1,args.var_latent_dim).to(device)
     return z_means, z_std

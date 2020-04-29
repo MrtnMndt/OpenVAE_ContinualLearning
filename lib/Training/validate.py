@@ -10,7 +10,7 @@ from lib.Utility.visualization import visualize_confusion
 from lib.Utility.visualization import visualize_image_grid
 
 
-def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, mu=None, std=None):
+def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, class_mu=None, class_std=None):
     """
     Evaluates/validates the model
 
@@ -121,7 +121,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
                             pixel_sample = torch.multinomial(probs, 1).float() / 255.
                             recon[:, c, h, w] = pixel_sample.squeeze()
 
-                if (epoch % args.visualization_epoch == 0) and (i == (len(Dataset.val_loader) - 2)):
+                if (epoch % args.visualization_epoch == 0) and (i == (len(Dataset.val_loader) - 1)):
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
                 recon_loss = F.binary_cross_entropy(recon, recon_target)
@@ -129,7 +129,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
                 # If not autoregressive simply apply the Sigmoid and visualize
                 # recon = torch.sigmoid(recon_output)
                 recon = recon_output
-                if (i == (len(Dataset.val_loader) - 2)) and (epoch % args.visualization_epoch == 0):
+                if (i == (len(Dataset.val_loader) - 1)) and (epoch % args.visualization_epoch == 0):
                     visualize_image_grid(inp, writer, epoch + 1, 'input_snapshot', save_path)
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
@@ -178,7 +178,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
             # If we are at the end of validation, create one mini-batch of example generations. Only do this every
             # other epoch specified by visualization_epoch to avoid generation of lots of images and computationally
             # expensive calculations of the autoregressive model's generation.
-            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0:
+            if i == (len(Dataset.val_loader) - 1) and epoch % args.visualization_epoch == 0:
                 # generation
                 gen = model.module.generate()
 
@@ -189,13 +189,27 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
                     class_len = Dataset.num_classes
                     if args.incremental_data:
                         class_len = len(Dataset.seen_tasks) 
-                    class_choice = np.random.choice(class_len, batch_size)
-                    class_choice = np.sort(class_choice)
-                    zs = torch.randn(batch_size, model.module.latent_dim*16).to(device)
-                    for b in range(batch_size):
-                        zs[b] = torch.normal(mu[class_choice[b]],std[class_choice[b]])
-                    gen = model.module.decode(zs)
-                visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
+                    for c in range(class_len):
+                        zs = torch.rand(batch_size, model.module.latent_dim).to(device)
+                        for b in range(batch_size):
+                            zs[b] = model.module.reparameterize(class_mu[c],class_std[c])
+                        gen = model.module.decode(zs)
+                        name = str(c) + '_generation_snapshot'
+                        visualize_image_grid(gen, writer, epoch + 1, name , save_path)
+                else:
+                    visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
+                # if args.gan:
+                #     batch_size = target.size(0)
+                #     class_len = Dataset.num_classes
+                #     if args.incremental_data:
+                #         class_len = len(Dataset.seen_tasks) 
+                #     class_choice = np.random.choice(class_len, batch_size)
+                #     class_choice = np.sort(class_choice)
+                #     zs = torch.randn(batch_size, model.module.latent_dim*16).to(device)
+                #     for b in range(batch_size):
+                #         zs[b] = torch.normal(class_mu[class_choice[b]],class_std[class_choice[b]])
+                #     gen = model.module.decode(zs)
+                # visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
 
             # Print progress
             if i % args.print_freq == 0:

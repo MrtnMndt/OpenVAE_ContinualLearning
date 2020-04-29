@@ -107,7 +107,8 @@ def get_incremental_dataset(parent_class, args):
             # Adding data augmentation here is thus the wrong place!
             train_transforms = transforms.Compose([
                 transforms.ToPILImage(mode = "RGB"),
-                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                # transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                transforms.CenterCrop(patch_size),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
@@ -489,19 +490,19 @@ def get_incremental_dataset(parent_class, args):
                             z_std[i] = torch.std(dataset_train_dict["zs_correct"][i],dim=0)
 
                         else:
-                            z_means[i] = torch.zeros(1,args.var_latent_dim*16)
-                            z_std[i] = torch.zeros(1,args.var_latent_dim*16)
+                            z_means[i] = torch.zeros(1,args.var_latent_dim)
+                            z_std[i] = torch.zeros(1,args.var_latent_dim)
 
                 print("Using generative model to replay old data")
                 for i in trange(int(seen_dataset_size / batch_size)):
 
                     if not condition :
                         # sample from the prior
-                        z_samples = torch.randn(batch_size, model.module.latent_dim*16).to(self.device)
+                        z_samples = torch.randn(batch_size, model.module.latent_dim).to(self.device)
                     else:
                         # sample from the class condition prior
                         class_choice = np.random.choice(len(self.seen_tasks) - self.num_increment_tasks, batch_size)
-                        z_samples = torch.randn(batch_size, model.module.latent_dim*16).to(self.device)
+                        z_samples = torch.randn(batch_size, model.module.latent_dim).to(self.device)
                         for b in range(batch_size):
                             z_samples[b] = torch.normal(z_means[class_choice[b]],z_std[class_choice[b]])
 
