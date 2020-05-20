@@ -224,17 +224,17 @@ def main():
      # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list, gamma=0.5)
     optimizer = {}
     optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
-                                        , args.learning_rate)
+                                        , lr=args.learning_rate, betas=(0.5, 0.9))
     optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
-                                        , args.gan_learning_rate)
-    optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.gan_learning_rate)
+                                        , lr=args.learning_rate, betas=(0.5, 0.9))
+    optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), lr=args.gan_learning_rate, betas=(0.5, 0.9))
 
     # milestones_list = np.asarray([int(args.epochs/3),int(args.epochs*2/3)])
-    milestones_list = np.asarray([int(args.epochs/2)])
-    scheduler = {}
-    scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list, gamma=0.1)
-    scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list, gamma=0.1)
-    scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list, gamma=0.1)
+    # milestones_list = np.asarray([int(args.epochs/2)])
+    # scheduler = {}
+    # scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list, gamma=0.1)
+    # scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list, gamma=0.1)
+    # scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list, gamma=0.1)
 
     # Parallel container for multi GPU use and cast to available device
     model = torch.nn.DataParallel(model).to(device)
@@ -356,9 +356,9 @@ def main():
         #     l1_weight = 10
         # else:
         #     l1_weight -= 2
-        scheduler['enc'].step()
-        scheduler['dec'].step()
-        scheduler['disc'].step()
+        # scheduler['enc'].step()
+        # scheduler['dec'].step()
+        # scheduler['disc'].step()
 
         # if a new task begins reset the best prec so that new best model can be stored.
         if args.incremental_data and epoch % args.epochs == 0:

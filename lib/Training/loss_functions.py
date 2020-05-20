@@ -33,6 +33,7 @@ def unified_loss_function(output_samples_classification, target, output_samples_
     else:
         # recon_loss = nn.BCEWithLogitsLoss(reduction='sum')
         recon_loss = nn.L1Loss(reduction='sum')
+        # recon_loss = nn.L1Loss()
 
     class_loss = nn.CrossEntropyLoss(reduction='sum')
 

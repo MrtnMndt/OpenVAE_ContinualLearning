@@ -223,10 +223,10 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             # pred_label = torch.argmax(class_samples, dim=-1).squeeze()
             # mu_label = pred_label.to(device)
             mu_label = target
-        # mu_label = mu.detach()
+         # mu_label = mu.detach()
         
         #### G Update####
-        if i % 5 == 0:
+        if i % 1 == 0:
 
             # OCDVAE calculate loss
             class_loss, recon_loss, kld_loss = criterion(class_samples, class_target, recon_samples, recon_target, mu, std,
@@ -250,7 +250,7 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             n,b,c,x,y = recon_samples.shape
             fake_z = model.module.forward_D((recon_samples.view(n*b,c,x,y)), mu_label)
 
-            GAN_G_loss = -torch.mean(fake_z)
+            GAN_G_loss = -0.01*torch.mean(fake_z)
             G_losses_fake.update(GAN_G_loss.item(), 1)
             G_losses.update(GAN_G_loss.item(), inp.size(0))
             GAN_G_loss += loss
@@ -274,14 +274,14 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
         D_loss_fake = torch.mean(torch.nn.functional.relu(1. + fake_z))
         D_losses_fake.update(D_loss_fake.item(), 1)
 
-        #compute gradient penalty
-        alpha = torch.rand(inp.size(0),1,1,1).to(device)
-        x_hat = (alpha*inp.data + (1-alpha)* (recon_samples.view(n*b,c,x,y)).data).requires_grad_(True)
-        grad_z = model.module.forward_D(x_hat)
-        D_loss_gp = model.module.discriminator.gradient_penalty(grad_z, x_hat)
+        # #compute gradient penalty
+        # alpha = torch.rand(inp.size(0),1,1,1).to(device)
+        # x_hat = (alpha*inp.data + (1-alpha)* (recon_samples.view(n*b,c,x,y)).data).requires_grad_(True)
+        # grad_z = model.module.forward_D(x_hat)
+        # D_loss_gp = model.module.discriminator.gradient_penalty(grad_z, x_hat)
 
         # GAN_D_loss = args.g_weight *(GAN_criterion(real_z, torch.ones_like(real_z).float()) + GAN_criterion(fake_z, torch.zeros_like(fake_z).float()))
-        GAN_D_loss = D_loss_real + D_loss_fake + args.lambda_gp * D_loss_gp #WGAN_gp
+        GAN_D_loss = (D_loss_real + D_loss_fake)  #+ args.lambda_gp * D_loss_gp #WGAN_gp
         # GAN_D_loss = D_loss_real + D_loss_fake # WGAN
         D_losses.update(GAN_D_loss.item(), inp.size(0))
 

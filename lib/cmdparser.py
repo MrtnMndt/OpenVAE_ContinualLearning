@@ -117,7 +117,7 @@ parser.add_argument('--gan-learning-rate', default = 1e-4, type=float, help ='tr
 parser.add_argument('--num-dis-feature', default=128, type=int, help='number of total epochs to run')
 parser.add_argument('--num-gan-feature', default=64, type=int, help='number of total epochs to run')
 parser.add_argument('--l1-weight', default = 10, type = int)
-parser.add_argument('--lambda-gp', default = 10, type = int)
+parser.add_argument('--lambda-gp', default = 0, type = int)
 # parser.add_argument('--g-weight', default = 1, type = int)
 parser.add_argument('--feature-wise-loss', action = "store_true")
 parser.add_argument('--encoder-dist', action='store_true', help ='feature_distance loss')

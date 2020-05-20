@@ -108,7 +108,8 @@ def get_incremental_dataset(parent_class, args):
             train_transforms = transforms.Compose([
                 transforms.ToPILImage(mode = "RGB"),
                 # transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
-                transforms.CenterCrop(patch_size),
+                # transforms.CenterCrop(patch_size),
+                transforms.Resize(size=(patch_size, patch_size)),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
@@ -213,10 +214,15 @@ def get_incremental_dataset(parent_class, args):
             """
 
             train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=batch_size, shuffle=True,
-                                                       num_workers=workers, pin_memory=is_gpu, sampler=None)
+                                                       num_workers=workers, pin_memory=is_gpu)
 
             val_loader = torch.utils.data.DataLoader(self.valset, batch_size=batch_size, shuffle=True,
                                                      num_workers=workers, pin_memory=is_gpu)
+            # train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=batch_size, shuffle=True,
+            #                                            num_workers=workers, pin_memory=False, sampler=None)
+
+            # val_loader = torch.utils.data.DataLoader(self.valset, batch_size=batch_size, shuffle=True,
+            #                                          num_workers=workers, pin_memory=False)
 
             return train_loader, val_loader
 
@@ -340,9 +346,9 @@ def get_incremental_dataset(parent_class, args):
                 # # so far. Note that if generative replay has been called before after the first task increment,
                 # # this means that previous train data consists of already generated data.
                 # # Evaluate the training dataset to find the correctly classified examples.
-                # dataset_train_dict = eval_dataset(model, self.train_loader,
-                #                                   len(self.seen_tasks) - self.num_increment_tasks, self.device,
-                #                                   samples=self.args.var_samples)
+                dataset_train_dict = eval_dataset(model, self.train_loader,
+                                                  len(self.seen_tasks) - self.num_increment_tasks, self.device,
+                                                  samples=self.args.var_samples)
                 # Find the per class mean of z, i.e. the class specific regions of highest density of the approximate
                 # posterior.
                 z_means = mr.get_means(dataset_train_dict["zs_correct"])

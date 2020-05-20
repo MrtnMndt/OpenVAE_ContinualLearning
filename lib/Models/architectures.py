@@ -467,6 +467,150 @@ class WRN(nn.Module):
             classification_samples[i] = self.classifier(z)
         return classification_samples, output_samples, z_mean, z_std
 
+class WRN_gan(nn.Module):
+    """
+    Flexibly sized Wide Residual Network (WRN). Extended to the variational setting and to our unified model.
+    """
+    def __init__(self, device, num_classes, num_colors, args):
+        super(WRN_gan, self).__init__()
+
+        self.widen_factor = args.wrn_widen_factor
+        self.depth = args.wrn_depth
+
+        self.batch_norm = args.batch_norm
+        self.patch_size = args.patch_size
+        self.batch_size = args.batch_size
+        self.num_colors = num_colors
+        self.num_classes = num_classes
+        self.device = device
+        self.out_channels = args.out_channels
+
+        self.seen_tasks = []
+
+        self.num_samples = args.var_samples
+        self.latent_dim = args.var_latent_dim
+
+        self.nChannels = [args.wrn_embedding_size, 16 * self.widen_factor, 32 * self.widen_factor,
+                          64 * self.widen_factor]
+
+        assert ((self.depth - 4) % 6 == 0)
+        self.num_block_layers = int((self.depth - 4) / 6)
+
+        self.encoder = nn.Sequential(OrderedDict([
+            ('encoder_conv1', nn.Conv2d(num_colors, self.nChannels[0], kernel_size=3, stride=1, padding=1, bias=False)),
+            ('encoder_block1', WRNNetworkBlock(self.num_block_layers, self.nChannels[0], self.nChannels[1],
+                                               WRNBasicBlock, batchnorm=self.batch_norm)),
+            ('encoder_block2', WRNNetworkBlock(self.num_block_layers, self.nChannels[1], self.nChannels[2],
+                                               WRNBasicBlock, batchnorm=self.batch_norm, stride=2)),
+            ('encoder_block3', WRNNetworkBlock(self.num_block_layers, self.nChannels[2], self.nChannels[3],
+                                               WRNBasicBlock, batchnorm=self.batch_norm, stride=2)),
+            ('encoder_bn1', nn.BatchNorm2d(self.nChannels[3], eps=self.batch_norm)),
+            ('encoder_act1', nn.ReLU(inplace=True))
+        ]))
+
+        if args.feature_wise_loss:
+            self.encoder_hooks = {}
+            def get_activation(name):
+                def hook(model, input, output):
+                    self.encoder_hooks[name] = output.detach()
+                return hook
+            print("encoder hook: ")
+            for name, module in self.encoder.named_modules():
+                if '.' not in name and 'act' not in name and 'bn' not in name and len(name)>1:
+                    print(name)
+                    module.register_forward_hook(get_activation(name))
+
+        self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y = get_feat_size(self.encoder, self.patch_size,
+                                                                                          self.num_colors)
+        self.latent_mu = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_x * self.enc_channels,
+                                   self.latent_dim, bias=False)
+        self.latent_std = nn.Linear(self.enc_spatial_dim_x * self.enc_spatial_dim_y * self.enc_channels,
+                                    self.latent_dim, bias=False)
+
+        self.classifier = nn.Sequential(nn.Linear(self.latent_dim, num_classes, bias=False))
+
+        self.latent_decoder = nn.Linear(self.latent_dim, self.enc_spatial_dim_x * self.enc_spatial_dim_y *
+                                        self.enc_channels, bias=False)
+
+        self.decoder = nn.Sequential(OrderedDict([
+            ('decoder_block1', WRNNetworkBlock(self.num_block_layers, self.nChannels[3], self.nChannels[2],
+                                               WRNBasicBlock, batchnorm=self.batch_norm, stride=1)),
+            ('decoder_upsample1', nn.Upsample(scale_factor=2, mode='nearest')),
+            ('decoder_block2', WRNNetworkBlock(self.num_block_layers, self.nChannels[2], self.nChannels[1],
+                                               WRNBasicBlock, batchnorm=self.batch_norm, stride=1)),
+            ('decoder_upsample2', nn.Upsample(scale_factor=2, mode='nearest')),
+            ('decoder_block3', WRNNetworkBlock(self.num_block_layers, self.nChannels[1], self.nChannels[0],
+                                               WRNBasicBlock, batchnorm=self.batch_norm, stride=1)),
+            ('decoder_bn1', nn.BatchNorm2d(self.nChannels[0], eps=self.batch_norm)),
+            ('decoder_act1', nn.ReLU(inplace=True)),
+            ('decoder_conv1', nn.Conv2d(self.nChannels[0], self.out_channels, kernel_size=3, stride=1, padding=1,
+                                        bias=False)),
+            ('decoder_act2', nn.Tanh()),
+        ]))
+
+        if self.patch_size ==32:
+            from .discriminators.snresnet32 import SNResNetProjectionDiscriminator
+        elif self.patch_size == 64:
+            from .discriminators.snresnet64 import SNResNetProjectionDiscriminator
+        elif self.patch_size == 128:
+            from .discriminators.snresnet128 import SNResNetProjectionDiscriminator            
+        else:
+            print("wrong patch_size")
+            exit()
+
+        self.discriminator = SNResNetProjectionDiscriminator(args.num_gan_feature, self.num_classes, args = args)
+
+    def encode(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        z_mean = self.latent_mu(x)
+        z_std = self.latent_std(x)
+        return z_mean, z_std
+
+    def reparameterize(self, mu, std):
+        eps = std.data.new(std.size()).normal_()
+        return eps.mul(std).add(mu)
+
+    def decode(self, z):
+        z = self.latent_decoder(z)
+        z = z.view(z.size(0), self.enc_channels, self.enc_spatial_dim_x, self.enc_spatial_dim_y)
+        x = self.decoder(z)
+        return x
+
+    def generate(self):
+        z = torch.randn(self.batch_size, self.latent_dim).to(self.device)
+        x = self.decode(z)
+        x = torch.sigmoid(x)
+        return x
+
+    def forward(self, x):
+        z_mean, z_std = self.encode(x)
+        output_samples = torch.zeros(self.num_samples, x.size(0), self.out_channels, self.patch_size,
+                                     self.patch_size).to(self.device)
+        classification_samples = torch.zeros(self.num_samples, x.size(0), self.num_classes).to(self.device)
+        for i in range(self.num_samples):
+            z = self.reparameterize(z_mean, z_std)
+            output_samples[i] = self.decode(z)
+            classification_samples[i] = self.classifier(z)
+        return classification_samples, output_samples, z_mean, z_std
+        
+    def forward_G(self, mu, std):
+        z = self.reparameterize(mu, std)
+        output_samples = self.decode(z)
+        return output_samples, z
+
+    def forward_E(self, x):
+        z_mean, z_std = self.encode(x)
+        classification_samples = torch.zeros(self.num_samples, x.size(0), self.num_classes).to(self.device)
+        for i in range(self.num_samples):
+            z = self.reparameterize(z_mean, z_std)
+            classification_samples[i] = self.classifier(z)
+        return classification_samples, z_mean, z_std
+
+    def forward_D(self, x, y=None):
+        x = self.discriminator(x, y)
+        return x 
+
 class CIFAR_ResBasickBlock(nn.Module):
     """
         based on Keras-cifar resnet implementation

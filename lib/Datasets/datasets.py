@@ -683,7 +683,7 @@ class Tiny_ImageNet:
         else:
             train_transforms = transforms.Compose([
                 transforms.Resize(size=(patch_size, patch_size)),
-                transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
+                # transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
                 transforms.RandomHorizontalFlip(),
                 # transforms.Resize(size=(patch_size, patch_size)),
                 transforms.ToTensor(),
@@ -1537,16 +1537,6 @@ class LSUN:
         self.trainset, self.valset = self.get_dataset()
         self.train_loader, self.val_loader = self.get_dataset_loader(args.batch_size, args.workers, is_gpu)
 
-        self.class_to_idx = {'0': 0,
-                             '1': 1,
-                             '2': 2,
-                             '3': 3,
-                             '4': 4,
-                             '5': 5,
-                             '6': 6,
-                             '7': 7,
-                             '8': 8,
-                             '9': 9}
 
     def __get_transforms(self, patch_size):
         if self.gray_scale:
@@ -1583,12 +1573,10 @@ class LSUN:
              torch.utils.data.TensorDataset: trainset, valset
         """
 
-        trainset = datasets.SVHN('datasets/SVHN/train/', split='train', transform=self.train_transforms,
-                                 target_transform=None, download=True)
-        valset = datasets.SVHN('datasets/SVHN/test/', split='test', transform=self.val_transforms,
-                               target_transform=None, download=True)
-
-        trainset = torch.utils.data.ConcatDataset([trainset, extraset])
+        trainset = datasets.LSUN('datasets/lmdb', classes='train', transform=self.train_transforms,
+                                 target_transform=None)
+        valset = datasets.LSUN('datasets/lmdb', classes='val', transform=self.val_transforms,
+                               target_transform=None)
 
         return trainset, valset
 
