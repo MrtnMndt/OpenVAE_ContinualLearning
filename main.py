@@ -214,9 +214,10 @@ def main():
                                   padding=args.pixel_cnn_kernel_size//2)
 
     # Initialize the weights of the model, by default according to He et al.
-    print("Initializing network with: " + args.weight_init)
-    WeightInitializer = WeightInit(args.weight_init)
-    WeightInitializer.init_model(model)
+    if not args.no_init_model:
+        print("Initializing network with: " + args.weight_init)
+        WeightInitializer = WeightInit(args.weight_init)
+        WeightInitializer.init_model(model)
 
     # Define optimizer and loss function (criterion)
     # milestones_list = [100,150]
@@ -226,8 +227,8 @@ def main():
     optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
                                         , lr=args.learning_rate, betas=(0.5, 0.9))
     optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
-                                        , lr=args.learning_rate, betas=(0.5, 0.9))
-    optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), lr=args.gan_learning_rate, betas=(0.5, 0.9))
+                                        , lr=args.gen_learning_rate, betas=(0.5, 0.9))
+    optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), lr=args.dis_learning_rate, betas=(0.5, 0.9))
 
     # milestones_list = np.asarray([int(args.epochs/3),int(args.epochs*2/3)])
     # milestones_list = np.asarray([int(args.epochs/2)])

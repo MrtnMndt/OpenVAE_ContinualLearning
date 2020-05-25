@@ -105,18 +105,20 @@ def get_incremental_dataset(parent_class, args):
             # important note: these transforms will only be called once during the
             # creation of the dataset and no longer in the incremental datasets that inherit.
             # Adding data augmentation here is thus the wrong place!
+            re_patch_size = patch_size+int(math.ceil(patch_size * 0.1))
             train_transforms = transforms.Compose([
                 transforms.ToPILImage(mode = "RGB"),
-                # transforms.RandomCrop(patch_size, int(math.ceil(patch_size * 0.1))),
-                # transforms.CenterCrop(patch_size),
-                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Resize(size = (re_patch_size,re_patch_size)),
+                transforms.RandomCrop(size=(patch_size,patch_size)),
+                # transforms.Resize(patch_size),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
             ])
 
             val_transforms = transforms.Compose([
                 transforms.ToPILImage(mode = "RGB"),
-                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Resize(size = (re_patch_size,re_patch_size)),
+                transforms.CenterCrop(size=(patch_size,patch_size)),
                 transforms.ToTensor(),
             ])
 

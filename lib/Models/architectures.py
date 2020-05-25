@@ -593,7 +593,7 @@ class WRN_gan(nn.Module):
             output_samples[i] = self.decode(z)
             classification_samples[i] = self.classifier(z)
         return classification_samples, output_samples, z_mean, z_std
-        
+
     def forward_G(self, mu, std):
         z = self.reparameterize(mu, std)
         output_samples = self.decode(z)
@@ -1267,7 +1267,8 @@ class ResNet_proj_gan(nn.Module):
 
         network_name = "resnet"+str(self.depth)
         net_init_method = getattr(torchvision.models, network_name)
-        initial_encoder = net_init_method(pretrained=False)
+        # initial_encoder = net_init_method(pretrained=False)
+        initial_encoder = net_init_method(pretrained=True)
 
         self.encoder = nn.Sequential(*list(initial_encoder.children())[:-1])
 

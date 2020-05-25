@@ -198,18 +198,6 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
                         visualize_image_grid(gen, writer, epoch + 1, name , save_path)
                 else:
                     visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
-                # if args.gan:
-                #     batch_size = target.size(0)
-                #     class_len = Dataset.num_classes
-                #     if args.incremental_data:
-                #         class_len = len(Dataset.seen_tasks) 
-                #     class_choice = np.random.choice(class_len, batch_size)
-                #     class_choice = np.sort(class_choice)
-                #     zs = torch.randn(batch_size, model.module.latent_dim*16).to(device)
-                #     for b in range(batch_size):
-                #         zs[b] = torch.normal(class_mu[class_choice[b]],class_std[class_choice[b]])
-                #     gen = model.module.decode(zs)
-                # visualize_image_grid(gen, writer, epoch + 1, 'generation_snapshot', save_path)
 
             # Print progress
             if i % args.print_freq == 0:

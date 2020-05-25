@@ -224,7 +224,7 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             # mu_label = pred_label.to(device)
             mu_label = target
          # mu_label = mu.detach()
-        
+
         #### G Update####
         if i % 1 == 0:
 
@@ -250,7 +250,7 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             n,b,c,x,y = recon_samples.shape
             fake_z = model.module.forward_D((recon_samples.view(n*b,c,x,y)), mu_label)
 
-            GAN_G_loss = -0.01*torch.mean(fake_z)
+            GAN_G_loss = -args.var_gan_weight*torch.mean(fake_z)
             G_losses_fake.update(GAN_G_loss.item(), 1)
             G_losses.update(GAN_G_loss.item(), inp.size(0))
             GAN_G_loss += loss
@@ -261,7 +261,7 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
             GAN_G_loss.backward()
             optimizer['enc'].step()
             optimizer['dec'].step()
-
+        
         #### D Update#### 
         real_z = model.module.forward_D(recon_target, mu_label)
         #D_loss_real = -torch.mean(real_z)
@@ -291,7 +291,7 @@ def train(Dataset, model, criterion, epoch, l1_weight, optimizer, writer, device
         optimizer['disc'].zero_grad()
         GAN_D_loss.backward()
         optimizer['disc'].step()
-        
+
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()

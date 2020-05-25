@@ -1573,10 +1573,108 @@ class LSUN:
              torch.utils.data.TensorDataset: trainset, valset
         """
 
-        trainset = datasets.LSUN('datasets/lmdb', classes='train', transform=self.train_transforms,
+        trainset = datasets.LSUN('datasets/lmdb', classes=['bedroom_train'], transform=self.train_transforms,
                                  target_transform=None)
-        valset = datasets.LSUN('datasets/lmdb', classes='val', transform=self.val_transforms,
+        valset = datasets.LSUN('datasets/lmdb', classes=['bedroom_val'], transform=self.val_transforms,
                                target_transform=None)
+
+        return trainset, valset
+
+    def get_dataset_loader(self, batch_size, workers, is_gpu):
+        """
+        Defines the dataset loader for wrapped dataset
+        Parameters:
+            batch_size (int): Defines the batch size in data loader
+            workers (int): Number of parallel threads to be used by data loader
+            is_gpu (bool): True if CUDA is enabled so pin_memory is set to True
+        Returns:
+             torch.utils.data.TensorDataset: trainset, valset
+        """
+
+        train_loader = torch.utils.data.DataLoader(
+            self.trainset,
+            batch_size=batch_size, shuffle=True,
+            num_workers=workers, pin_memory=is_gpu, sampler=None)
+
+        val_loader = torch.utils.data.DataLoader(
+            self.valset,
+            batch_size=batch_size, shuffle=False,
+            num_workers=workers, pin_memory=is_gpu)
+
+        return train_loader, val_loader
+
+from .cub2011 import Cub2011
+class CUB200:
+    """
+    Parameters:
+        args (dict): Dictionary of (command line) arguments.
+            Needs to contain batch_size (int) and workers(int).
+        is_gpu (bool): True if CUDA is enabled.
+            Sets value of pin_memory in DataLoader.
+    Attributes:
+        train_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor, horizontal flips, random
+            translations of up to 10% in each direction and normalization.
+        val_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor and normalization.
+        trainset (torch.utils.data.TensorDataset): Training set wrapper.
+        valset (torch.utils.data.TensorDataset): Validation set wrapper.
+        train_loader (torch.utils.data.DataLoader): Training set loader with shuffling.
+        val_loader (torch.utils.data.DataLoader): Validation set loader.
+    """
+
+    def __init__(self, is_gpu, args):
+        self.num_classes = 200
+        self.gray_scale = args.gray_scale
+        self.gan_input = args.gan
+
+        self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
+
+        self.trainset, self.valset = self.get_dataset()
+        self.train_loader, self.val_loader = self.get_dataset_loader(args.batch_size, args.workers, is_gpu)
+
+
+    def __get_transforms(self, patch_size):
+        if self.gray_scale:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+                ])
+
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+                ])
+        else:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ])
+
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=(patch_size, patch_size)),
+                transforms.ToTensor(),
+            ])
+
+        return train_transforms, val_transforms
+
+    def get_dataset(self):
+        """
+        Uses torchvision.datasets.CIFAR100 to load dataset.
+        Downloads dataset if doesn't exist already.
+        Returns:
+             torch.utils.data.TensorDataset: trainset, valset
+        """
+
+        trainset = Cub2011('datasets/', train=True, transform=self.train_transforms,
+                                    download=True)
+        # valset = Cub2011('datasets/', train=True, transform=self.val_transforms,
+        #                           download=True)
+        valset = Cub2011('datasets/', train=False, transform=self.val_transforms,
+                                  download=True)
 
         return trainset, valset
 
