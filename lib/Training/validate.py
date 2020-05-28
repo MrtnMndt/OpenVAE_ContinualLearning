@@ -137,9 +137,9 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args, 
             # our normalized losses back to un-normalized values.
             # For the KLD this also means the reported loss is not scaled by beta, to allow for a fair comparison
             # across potential weighting terms.
-            class_losses.update(class_loss.item() * model.module.num_classes, inp.size(0))
-            kld_losses.update(kld_loss.item() * model.module.latent_dim, inp.size(0))
-            recon_losses_nat.update(recon_loss.item() * inp.size()[1:].numel(), inp.size(0))
+            class_losses.update(class_loss.item(), inp.size(0))
+            kld_losses.update(kld_loss.item() , inp.size(0))
+            recon_losses_nat.update(recon_loss.item() / torch.numel(inp), inp.size(0))
             losses.update((class_loss + recon_loss + kld_loss).item(), inp.size(0))
 
             # if we are learning continually, we need to calculate the base and new reconstruction losses at the end

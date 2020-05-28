@@ -37,7 +37,6 @@ from lib.Utility.visualization import visualize_dataset_in_2d_embedding
 # Comment this if CUDNN benchmarking is not desired
 cudnn.benchmark = True
 
-#CUDA_VISIBLE_DEVICES=0 python main.py --dataset CIFAR100 -j 6 -p 32 -b 128 -a CIFAR_ResNet_proj --wrn-depth 32 -noise 0 --gan --visualization-epoch 2 -lr 0.002 --incremental-data True --num-base-tasks 19 --num-increment-tasks 20 --num-dis-feature 128 -cgenreplay True -genreplay True --epoch 200
 def main():
     # Command line options
     args = parser.parse_args()
@@ -205,7 +204,6 @@ def main():
 
     # build the model
     model = net_init_method(device, num_classes, num_colors, args)
-    # model = net_init_method(device, 100, num_colors, args)
 
     # optionally add the autoregressive decoder
     if args.autoregression:
@@ -220,22 +218,12 @@ def main():
         WeightInitializer.init_model(model)
 
     # Define optimizer and loss function (criterion)
-    # milestones_list = [100,150]
-    # optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
-     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones_list, gamma=0.5)
     optimizer = {}
     optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
                                         , lr=args.learning_rate, betas=(0.5, 0.9))
     optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
                                         , lr=args.gen_learning_rate, betas=(0.5, 0.9))
     optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), lr=args.dis_learning_rate, betas=(0.5, 0.9))
-
-    # milestones_list = np.asarray([int(args.epochs/3),int(args.epochs*2/3)])
-    # milestones_list = np.asarray([int(args.epochs/2)])
-    # scheduler = {}
-    # scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list, gamma=0.1)
-    # scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list, gamma=0.1)
-    # scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list, gamma=0.1)
 
     # Parallel container for multi GPU use and cast to available device
     model = torch.nn.DataParallel(model).to(device)
@@ -255,7 +243,9 @@ def main():
             best_prec = checkpoint['best_prec']
             best_loss = checkpoint['best_loss']
             model.load_state_dict(checkpoint['state_dict'])
-            # optimizer.load_state_dict(checkpoint['optimizer'])
+            optimizer['enc'].load_state_dict(checkpoint['optimizer_enc'])
+            optimizer['dec'].load_state_dict(checkpoint['optimizer_dec'])
+            optimizer['disc'].load_state_dict(checkpoint['optimizer_disc'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
@@ -314,12 +304,6 @@ def main():
                 model = model.module
                 optimizer['enc'] = torch.optim.Adam(list(model.encoder.parameters()) + list(model.latent_mu.parameters()) + list(model.latent_std.parameters()) + list(model.classifier.parameters())
                                         , args.learning_rate)
-                # optimizer['dec'] = torch.optim.Adam(list(model.decoder.parameters()) + list(model.latent_decoder.parameters())
-                #                         , args.gan_learning_rate)
-                # optimizer['disc'] = torch.optim.Adam(list(model.discriminator.parameters()), args.gan_learning_rate)
-                # scheduler['enc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['enc'], milestones=milestones_list+epoch, gamma=0.1)
-                # scheduler['dec'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['dec'], milestones=milestones_list+epoch, gamma=0.1)
-                # scheduler['disc'] = torch.optim.lr_scheduler.MultiStepLR(optimizer['disc'], milestones=milestones_list+epoch, gamma=0.1)
                 # Parallel container for multi GPU use and cast to available device
                 model = torch.nn.DataParallel(model).to(device)
 
@@ -343,23 +327,15 @@ def main():
                          'arch': args.architecture,
                          'state_dict': model.state_dict(),
                          'best_prec': best_prec,
-                         'best_loss': best_loss,},
-                         # 'optimizer': optimizer.state_dict()},
+                         'best_loss': best_loss,
+                         'optimizer_enc': optimizer['enc'].state_dict(),
+                         'optimizer_dec': optimizer['dec'].state_dict(),
+                         'optimizer_disc': optimizer['disc'].state_dict(),
+                         },
                         is_best, save_path)
 
         # increment epoch counters
         epoch += 1
-        # if epoch % 10 == 0:
-        #     l1_weight-=1
-        #     if l1_weight < 0:
-        #         l1_weight = 0
-        # if l1_weight < 10:
-        #     l1_weight = 10
-        # else:
-        #     l1_weight -= 2
-        # scheduler['enc'].step()
-        # scheduler['dec'].step()
-        # scheduler['disc'].step()
 
         # if a new task begins reset the best prec so that new best model can be stored.
         if args.incremental_data and epoch % args.epochs == 0:

@@ -287,7 +287,7 @@ class Flower17:
     """
 
     def __init__(self, is_gpu, args):
-        self.num_classes = 17
+        self.num_classes = 5
         self.gray_scale = args.gray_scale
 
         self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
@@ -360,7 +360,7 @@ class Flower17:
         """
 
         root = '.'
-        for cur_file in ['datasets','flower_data','17flowers_class']:
+        for cur_file in ['datasets','flower_data','6flowers_class']:
             root = os.path.join(root,cur_file)
             if not os.path.exists(root):
                 os.path.mkdir(root)
@@ -706,7 +706,7 @@ class Tiny_ImageNet:
              torch.utils.data.TensorDataset: trainset, valset
         """
 
-        root = './datasets/Tiny_ImageNet'
+        root = './datasets/tiny-imagenet-200'
         
         trainset = datasets.ImageFolder(root=root+'/train/', transform=self.train_transforms,
                                          target_transform=None)
