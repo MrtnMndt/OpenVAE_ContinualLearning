@@ -3,7 +3,7 @@
 This repository contains PyTorch code for our [paper](https://arxiv.org/abs/1905.12019
 ):
 
-> **Martin Mundt, Sagnik Majumder, Iliiua Pliushch and Visvanathan Ramesh:
+> **Martin Mundt, Sagnik Majumder, Iuliia Pliushch and Visvanathan Ramesh:
 > *"Unified Probabilistic Deep Continual Learning through Generative Replay and Open Set Recognition"*
 > https://arxiv.org/abs/1905.12019**
 
