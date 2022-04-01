@@ -1,13 +1,24 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
-def unified_loss_function(output_samples_classification, target, output_samples_recon, inp, mu, std, device, args):
+def KLD(mu, std):
+    # numerical value for stability of log computation
+    eps = 1e-8
+
+    # Compute the KL divergence, normalized by latent dimensionality
+    kld = -0.5 * torch.sum(1 + torch.log(eps + std ** 2) - (mu ** 2) - (std ** 2)) / torch.numel(mu)
+
+    return kld
+
+
+def joint_loss_function(output_samples_classification, target, output_samples_recon, inp, mu, std, device, args):
     """
-    Computes the unified model's joint loss function consisting of a term for reconstruction, a KL term between
-    approximate posterior and prior and the loss for the generative classifier. The number of variational samples
-    is one per default, as specified in the command line parser and typically is how VAE models and also our unified
-    model is trained. We have added the option to flexibly work with an arbitrary amount of samples.
+    Computes the model's joint loss function consisting of a term for reconstruction, a KL term between
+    approximate posterior and prior and the loss for the generative classifier. The number of samples
+    is one per default, as specified in the command line parser and typically is how VAE models are trained.
+    We have added the option to flexibly work with an arbitrary amount of samples.
 
     Parameters:
         output_samples_classification (torch.Tensor): Mini-batch of var_sample many classification prediction values.
@@ -39,9 +50,6 @@ def unified_loss_function(output_samples_classification, target, output_samples_
     recon_losses = torch.zeros(output_samples_recon.size(0)).to(device)
     cl_losses = torch.zeros(output_samples_classification.size(0)).to(device)
 
-    # numerical value for stability of log computation
-    eps = 1e-8
-
     # loop through each sample for each input and calculate the correspond loss. Normalize the losses.
     for i in range(output_samples_classification.size(0)):
         cl_losses[i] = class_loss(output_samples_classification[i], target) / torch.numel(target)
@@ -52,6 +60,42 @@ def unified_loss_function(output_samples_classification, target, output_samples_
     rl = torch.mean(recon_losses, dim=0)
 
     # Compute the KL divergence, normalized by latent dimensionality
-    kld = -0.5 * torch.sum(1 + torch.log(eps + std ** 2) - (mu ** 2) - (std ** 2)) / torch.numel(mu)
+    kld = KLD(mu, std)
 
     return cl, rl, kld
+
+
+def encoder_loss_with_fake(output_samples_classification, target, output_samples_recon, inp,
+                           real_mu, real_std, rec_mu, rec_std, fake_mu, fake_std, device, args):
+    """
+    encoder loss for adversarial training of IntroVAE
+    """
+    recon_loss = nn.BCELoss(reduction='sum')
+
+    class_loss = nn.CrossEntropyLoss(reduction='sum')
+
+    cl = class_loss(output_samples_classification, target) / torch.numel(target)
+    rl = recon_loss(output_samples_recon, inp) / torch.numel(inp)
+
+    # Compute the KL divergences
+    kld_real = KLD(real_mu, real_std)
+
+    margin = args.margin / torch.numel(real_mu)
+    kld_rec = F.relu(margin - KLD(rec_mu, rec_std))
+    kld_fake = F.relu(margin - KLD(fake_mu, fake_std))
+
+    return cl, rl, kld_real, kld_rec, kld_fake
+
+
+def decoder_loss_with_fake(output_samples_recon, inp, rec_mu, rec_std, fake_mu, fake_std, args):
+    """
+    decoder loss for adversarial training of IntroVAE
+    """
+    recon_loss = nn.BCELoss(reduction='sum')
+
+    rl = recon_loss(output_samples_recon, inp) / torch.numel(inp)
+
+    kld_rec = KLD(rec_mu, rec_std)
+    kld_fake = KLD(fake_mu, fake_std)
+
+    return rl, kld_rec, kld_fake

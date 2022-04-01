@@ -5,6 +5,7 @@ import zipfile
 import glob
 import librosa
 import scipy
+import math
 from tqdm import tqdm
 import torch
 import torch.utils.data
@@ -992,6 +993,125 @@ class SVHN:
             is_gpu (bool): True if CUDA is enabled so pin_memory is set to True
         Returns:
              torch.utils.data.TensorDataset: trainset, valset
+        """
+
+        train_loader = torch.utils.data.DataLoader(
+            self.trainset,
+            batch_size=batch_size, shuffle=True,
+            num_workers=workers, pin_memory=is_gpu, sampler=None)
+
+        val_loader = torch.utils.data.DataLoader(
+            self.valset,
+            batch_size=batch_size, shuffle=False,
+            num_workers=workers, pin_memory=is_gpu)
+
+        return train_loader, val_loader
+
+
+class Flower5:
+    """
+    Oxford Flower dataset .
+    Parameters:
+        args (dict): Dictionary of (command line) arguments.
+            Needs to contain batch_size (int) and workers(int).
+        is_gpu (bool): True if CUDA is enabled.
+            Sets value of pin_memory in DataLoader.
+    Attributes:
+        train_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor, repeating gray-scale image to
+            three channel for consistent use with different architectures
+            and normalization.
+        val_transforms (torchvision.transforms): Composition of transforms
+            including conversion to Tensor, repeating gray-scale image to
+            three channel for consistent use with different architectures
+            and normalization.
+        trainset (torch.utils.data.TensorDataset): Training set wrapper.
+        valset (torch.utils.data.TensorDataset): Validation set wrapper.
+        train_loader (torch.utils.data.DataLoader): Training set loader with shuffling.
+        val_loader (torch.utils.data.DataLoader): Validation set loader.
+        class_to_idx (dict): Defines mapping from class names to integers.
+    """
+
+    def __init__(self, is_gpu, args):
+        self.num_classes = 5
+        self.gray_scale = args.gray_scale
+
+        self.train_transforms, self.val_transforms = self.__get_transforms(args.patch_size)
+
+        self.trainset, self.valset = self.get_dataset()
+        self.train_loader, self.val_loader = self.get_dataset_loader(args.batch_size, args.workers, is_gpu)
+
+        self.class_to_idx = {'Sunflower': 0,
+                             'Daisy': 1,
+                             'Iris': 2,
+                             'Daffodil': 3,
+                             'Pansy': 4}
+
+    def __get_transforms(self, patch_size):
+        # optionally scale the images and repeat to three channels
+        # important note: these transforms will only be called once during the
+        # creation of the dataset and no longer in the incremental datasets that inherit.
+        # Adding data augmentation here is thus the wrong place!
+        resize = patch_size + int(math.ceil(patch_size * 0.1))
+        if self.gray_scale:
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=resize),
+                transforms.CenterCrop(patch_size),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+            ])
+
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=resize),
+                transforms.CenterCrop(patch_size),
+                transforms.Grayscale(num_output_channels=1),
+                transforms.ToTensor(),
+            ])
+        else:
+
+            train_transforms = transforms.Compose([
+                transforms.Resize(size=resize),
+                transforms.CenterCrop(patch_size),
+                transforms.ToTensor(),
+            ])
+            val_transforms = transforms.Compose([
+                transforms.Resize(size=resize),
+                transforms.CenterCrop(patch_size),
+                transforms.ToTensor(),
+            ])
+
+        return train_transforms, val_transforms
+
+    def get_dataset(self):
+        """
+        Uses torchvision.datasets.ImageFoder to load dataset.
+        Please download the dataset at https://www.robots.ox.ac.uk/~vgg/data/flowers/
+        Returns:
+             torch.utils.data.TensorDataset: trainset, valset
+        """
+
+        root = '.'
+        for cur_file in ['datasets', 'flower_data', '5flowers_class']:
+            root = os.path.join(root, cur_file)
+            if not os.path.exists(root):
+                os.path.mkdir(root)
+
+        trainset = datasets.ImageFolder(root=root + '/train/', transform=self.train_transforms,
+                                        target_transform=None)
+        valset = datasets.ImageFolder(root=root + '/valid/', transform=self.val_transforms,
+                                      target_transform=None)
+
+        return trainset, valset
+
+    def get_dataset_loader(self, batch_size, workers, is_gpu):
+        """
+        Defines the dataset loader for wrapped dataset
+        Parameters:
+            batch_size (int): Defines the batch size in data loader
+            workers (int): Number of parallel threads to be used by data loader
+            is_gpu (bool): True if CUDA is enabled so pin_memory is set to True
+        Returns:
+             torch.utils.data.DataLoader: train_loader, val_loader
         """
 
         train_loader = torch.utils.data.DataLoader(

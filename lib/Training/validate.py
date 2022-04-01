@@ -23,7 +23,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
         save_path (str): path to save data to
         args (dict): Dictionary of (command line) arguments.
             Needs to contain print_freq (int), epochs (int), incremental_data (bool), autoregression (bool),
-            visualization_epoch (int), cross_dataset (bool), num_base_tasks (int), num_increment_tasks (int) and
+            visualization_epoch (int), num_base_tasks (int), num_increment_tasks (int) and
             patch_size (int).
 
     Returns:
@@ -120,14 +120,14 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                             pixel_sample = torch.multinomial(probs, 1).float() / 255.
                             recon[:, c, h, w] = pixel_sample.squeeze()
 
-                if (epoch % args.visualization_epoch == 0) and (i == (len(Dataset.val_loader) - 2)):
+                if (epoch % args.visualization_epoch == 0) and (i == (len(Dataset.val_loader) - 1)) and (epoch > 0):
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
                 recon_loss = F.binary_cross_entropy(recon, recon_target)
             else:
                 # If not autoregressive simply apply the Sigmoid and visualize
                 recon = torch.sigmoid(recon_output)
-                if (i == (len(Dataset.val_loader) - 2)) and (epoch % args.visualization_epoch == 0):
+                if (i == (len(Dataset.val_loader) - 1)) and (epoch % args.visualization_epoch == 0) and (epoch > 0):
                     visualize_image_grid(recon, writer, epoch + 1, 'reconstruction_snapshot', save_path)
 
             # update the respective loss values. To be consistent with values reported in the literature we scale
@@ -143,15 +143,9 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             # of each task increment.
             if args.incremental_data and ((epoch + 1) % args.epochs == 0 and epoch > 0):
                 for j in range(inp.size(0)):
-                    # get the number of classes for cross-dataset or class incremental scenarios.
-                    if args.cross_dataset:
-                        base_classes = range(sum(Dataset.num_classes_per_task[:args.num_base_tasks]))
-                        new_classes = range(sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks) -
-                                                                             args.num_increment_tasks]),
-                                            sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks)]))
-                    else:
-                        base_classes = model.module.seen_tasks[:args.num_base_tasks + 1]
-                        new_classes = model.module.seen_tasks[-args.num_increment_tasks:]
+                    # get the number of classes for class incremental scenarios.
+                    base_classes = model.module.seen_tasks[:args.num_base_tasks + 1]
+                    new_classes = model.module.seen_tasks[-args.num_increment_tasks:]
 
                     if args.autoregression:
                         rec = recon_output[j].view(1, recon_output.size(1), recon_output.size(2),
@@ -175,7 +169,7 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
             # If we are at the end of validation, create one mini-batch of example generations. Only do this every
             # other epoch specified by visualization_epoch to avoid generation of lots of images and computationally
             # expensive calculations of the autoregressive model's generation.
-            if i == (len(Dataset.val_loader) - 2) and epoch % args.visualization_epoch == 0:
+            if i == (len(Dataset.val_loader) - 1) and epoch % args.visualization_epoch == 0 and (epoch > 0):
                 # generation
                 gen = model.module.generate()
 
@@ -210,25 +204,17 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
     # At the end of training isolated, or at the end of every task visualize the confusion matrix
     if (epoch + 1) % args.epochs == 0 and epoch > 0:
         # visualize the confusion matrix
-        if args.cross_dataset:
-            visualize_confusion(writer, epoch + 1, confusion.value(), Dataset.task_to_idx, save_path)
-        else:
-            visualize_confusion(writer, epoch + 1, confusion.value(), Dataset.class_to_idx, save_path)
+        visualize_confusion(writer, epoch + 1, confusion.value(), Dataset.class_to_idx, save_path)
 
         # If we are in a continual learning scenario, also use the confusion matrix to extract base and new precision.
         if args.incremental_data:
             prec1_base = 0.0
             prec1_new = 0.0
-            if args.cross_dataset:
-                for c in range(sum(Dataset.num_classes_per_task[:args.num_base_tasks])):
-                    prec1_base += confusion.value()[c][c]
-                prec1_base = prec1_base / sum(Dataset.num_classes_per_task[:args.num_base_tasks])
-            else:
-                # this has to be + 1 because the number of initial tasks is always one less than the amount of classes
-                # i.e. 1 task is 2 classes etc.
-                for c in range(args.num_base_tasks + 1):
-                    prec1_base += confusion.value()[c][c]
-                prec1_base = prec1_base / (args.num_base_tasks + 1)
+            # this has to be + 1 because the number of initial tasks is always one less than the amount of classes
+            # i.e. 1 task is 2 classes etc.
+            for c in range(args.num_base_tasks + 1):
+                prec1_base += confusion.value()[c][c]
+            prec1_base = prec1_base / (args.num_base_tasks + 1)
 
             # For the first task "new" metrics are equivalent to "base"
             if (epoch + 1) / args.epochs == 1:
@@ -237,18 +223,9 @@ def validate(Dataset, model, criterion, epoch, writer, device, save_path, args):
                 if args.autoregression:
                     recon_losses_new_bits_per_dim.avg = recon_losses_base_bits_per_dim.avg
             else:
-                if args.cross_dataset:
-                    for c in range(sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks) -
-                                                                    args.num_increment_tasks]),
-                                   sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks)])):
-                        prec1_new += confusion.value()[c][c]
-                    prec1_new = prec1_new / (sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks)])
-                                             - sum(Dataset.num_classes_per_task[:len(Dataset.seen_tasks) -
-                                                                                args.num_increment_tasks]))
-                else:
-                    for c in range(args.num_increment_tasks):
-                        prec1_new += confusion.value()[-c-1][-c-1]
-                    prec1_new = prec1_new / args.num_increment_tasks
+                for c in range(args.num_increment_tasks):
+                    prec1_new += confusion.value()[-c-1][-c-1]
+                prec1_new = prec1_new / args.num_increment_tasks
 
             # At the continual learning metrics to TensorBoard
             writer.add_scalar('validation/base_precision@1', prec1_base, len(model.module.seen_tasks)-1)

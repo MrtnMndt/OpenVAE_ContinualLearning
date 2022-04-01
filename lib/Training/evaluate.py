@@ -103,7 +103,7 @@ def eval_dataset(model, data_loader, num_classes, device, samples=1, calc_recons
         recon_loss = nn.BCEWithLogitsLoss(reduction='none')
 
     # evaluate the encoder and classifier and store results in corresponding lists according to predicted class.
-    # Prediction mean confidence and uncertainty is also obtained if amount of latent samples is greater than one.
+    # Prediction mean confidence and uncertainty is also obtained if amount of samples is greater than one.
     with torch.no_grad():
         for j, (inputs, classes) in enumerate(data_loader):
             inputs, classes = inputs.to(device), classes.to(device)

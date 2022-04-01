@@ -259,7 +259,6 @@ def main():
             openset_recon_classification_dict[openset_datasets_names[od]] = openset_recon_classification_correct
 
     # Print the results
-    # TODO: maybe log this to file also
     for other_data_name, other_data_dict in openset_classification_dict.items():
         print(other_data_name + ' EVT outlier percentage: ' +
               str(other_data_dict["outlier_percentage"][entropy_threshold_index]))

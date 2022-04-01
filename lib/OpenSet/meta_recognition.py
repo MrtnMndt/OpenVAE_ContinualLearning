@@ -230,7 +230,7 @@ def calc_entropy_classification(dataset_entropies, max_thresh_value, num_outlier
 
 
 def calc_reconstruction_classification(dataset_reconstruction_losses, max_thresh_value, num_outlier_threshs=50):
-    # TODO: basically the same as calc_entropy_classification function -> merge
+    # basically the same as calc_entropy_classification function -> could be merged
     """
     Calculates the percentage of dataset outliers given a set of reconstruction losses over a range of rejection priors.
     Parameters:
